@@ -17,7 +17,8 @@
       "Bash(vercel --version)",
       "Bash(vercel deploy:*)",
       "Bash(grep -rL \"force-dynamic\" src/app/dashboard/*/page.tsx)",
-      "Bash(npx next:*)"
+      "Bash(npx next:*)",
+      "Bash(npx vercel:*)"
     ]
   }
 }
