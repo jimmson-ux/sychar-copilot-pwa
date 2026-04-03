@@ -1,20 +1,8 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { createClient, SupabaseClient } from '@supabase/supabase-js'
+import { createClient } from '@/lib/supabase'
 
-// Lazy singleton — createClient is deferred until first component render (browser only).
-// Module-level calls would crash Next.js static generation when env vars are absent.
-let _supabase: SupabaseClient | null = null
-function getSupabase(): SupabaseClient {
-  if (!_supabase) {
-    _supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    )
-  }
-  return _supabase
-}
 
 const SCHOOL_ID = '68bd8d34-f2f0-4297-bd18-093328824d84'
 
@@ -134,7 +122,7 @@ export default function UniversityMatchingDashboard() {
     setError(null)
     try {
       // Fetch students
-      const { data: studs, error: sErr } = await getSupabase()
+      const { data: studs, error: sErr } = await createClient()
         .from('students')
         .select('id, full_name, gender, class_name, stream_name, pathway, kcpe_marks, curriculum_type')
         .eq('school_id', SCHOOL_ID)
@@ -150,11 +138,11 @@ export default function UniversityMatchingDashboard() {
 
       // Fetch predictions and reports in parallel
       const [predRes, reportRes] = await Promise.all([
-        getSupabase()
+        createClient()
           .from('kcse_predictions')
           .select('student_id, predicted_grade, predicted_points, confidence, intervention_needed')
           .in('student_id', studentIds),
-        getSupabase()
+        createClient()
           .from('ai_career_reports')
           .select('id, student_id, university_matches, generated_at')
           .eq('school_id', SCHOOL_ID)

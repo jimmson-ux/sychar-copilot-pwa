@@ -3,20 +3,7 @@
 // Principal/Deputy dashboard for viewing and submitting duty teacher grades
 
 import { useState, useEffect } from 'react'
-import { createClient, SupabaseClient } from '@supabase/supabase-js'
-
-// Lazy singleton — createClient is deferred until first component render (browser only).
-// Module-level calls would crash Next.js static generation when env vars are absent.
-let _supabase: SupabaseClient | null = null
-function getSupabase(): SupabaseClient {
-  if (!_supabase) {
-    _supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    )
-  }
-  return _supabase
-}
+import { createClient } from '@/lib/supabase'
 
 interface Appraisal {
   id: string
@@ -114,7 +101,7 @@ export default function DutyGradingDashboard({ schoolId, appraiserId }: { school
   }
 
   async function fetchTeachers() {
-    const { data } = await getSupabase()
+    const { data } = await createClient()
       .from('staff_records')
       .select('id, full_name, sub_role')
       .eq('school_id', schoolId)
@@ -135,7 +122,7 @@ export default function DutyGradingDashboard({ schoolId, appraiserId }: { school
       overall >= 6 ? 'Good' :
       overall >= 4 ? 'Satisfactory' : 'Needs Improvement'
 
-    const { error } = await getSupabase().from('appraisals').insert({
+    const { error } = await createClient().from('appraisals').insert({
       school_id: schoolId,
       appraiser_id: appraiserId,
       appraisee_id: form.teacher_id,

@@ -55,35 +55,48 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-title" content="Sychar Copilot" />
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="application-name" content="Sychar Copilot" />
-        <meta name="x-deploy-version" content="20260403-v8" />
+        <meta name="x-deploy-version" content="20260403-v9" />
         <script dangerouslySetInnerHTML={{ __html: `
           if ('serviceWorker' in navigator) {
+            // Reload once when a new SW takes control (controllerchange fires after
+            // skipWaiting + clients.claim, even if the page was loaded before the SW)
+            var _reloading = false
+            navigator.serviceWorker.addEventListener('controllerchange', function() {
+              if (_reloading) return
+              _reloading = true
+              window.location.reload()
+            })
+
+            // Also handle the explicit SW_UPDATED postMessage from the activate handler
+            navigator.serviceWorker.addEventListener('message', function(e) {
+              if (e.data && e.data.type === 'SW_UPDATED' && !_reloading) {
+                _reloading = true
+                setTimeout(function() { window.location.reload() }, 200)
+              }
+            })
+
             window.addEventListener('load', function() {
               navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' })
                 .then(function(reg) {
-                  // Poll for updates every 10 seconds until stable, then every 60s
+                  // Poll aggressively: every 10 s for first minute, then every 60 s
                   var _polls = 0
                   var _iv = setInterval(function() {
                     reg.update()
-                    if (++_polls >= 6) { clearInterval(_iv); setInterval(function() { reg.update() }, 60000) }
+                    if (++_polls >= 6) {
+                      clearInterval(_iv)
+                      setInterval(function() { reg.update() }, 60000)
+                    }
                   }, 10000)
 
+                  // When a new SW is found, tell it to skip waiting immediately
                   reg.addEventListener('updatefound', function() {
                     var newWorker = reg.installing
                     if (!newWorker) return
                     newWorker.addEventListener('statechange', function() {
-                      if (newWorker.state === 'installed') {
-                        // Tell the new SW to skip waiting and activate immediately
+                      if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
                         newWorker.postMessage({ type: 'SKIP_WAITING' })
                       }
                     })
-                  })
-
-                  // When the SW sends SW_UPDATED, reload to get fresh bundles
-                  navigator.serviceWorker.addEventListener('message', function(e) {
-                    if (e.data && e.data.type === 'SW_UPDATED') {
-                      setTimeout(function() { window.location.reload() }, 300)
-                    }
                   })
                 })
                 .catch(function(err) { console.warn('SW registration failed:', err) })

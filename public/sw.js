@@ -1,4 +1,4 @@
-// Sychar Service Worker — sychar-v8
+// Sychar Service Worker — sychar-v9
 // Strategy matrix:
 //   Navigation (HTML)  → Network First, no cache (always fresh from server)
 //   Scripts / Styles   → Cache First (content-hashed, safe to cache long-term)
@@ -7,7 +7,7 @@
 //   /api/hod/insights  → Stale-While-Revalidate (analytics, slightly stale OK)
 //   Offline fallback   → Inline HTML
 
-const CACHE_VERSION = 'sychar-v8'
+const CACHE_VERSION = 'sychar-v9'
 const ASSET_CACHE   = `${CACHE_VERSION}-assets`   // scripts, styles, fonts, images
 const API_CACHE     = `${CACHE_VERSION}-api`        // API responses
 
@@ -44,25 +44,20 @@ self.addEventListener('install', event => {
 
 self.addEventListener('activate', event => {
   event.waitUntil(
-    // Wipe any stale sychar caches that survived install (edge case)
     caches.keys()
       .then(keys => Promise.all(
         keys
           .filter(k => k !== ASSET_CACHE && k !== API_CACHE)
           .map(k => caches.delete(k))
       ))
-      .then(() => self.clients.claim())  // take control of all open tabs immediately
+      .then(() => self.clients.claim()) // take control of all open tabs immediately
       .then(() => self.clients.matchAll({ type: 'window', includeUncontrolled: true }))
-      .then(clients => Promise.all(
-        clients.map(client => {
-          // postMessage for pages that have a SW_UPDATED listener (new pages)
+      .then(clients => {
+        // Notify all open tabs — the layout listener calls window.location.reload()
+        clients.forEach(client => {
           client.postMessage({ type: 'SW_UPDATED', version: CACHE_VERSION })
-          // navigate() forces a reload even on old pages that have no listener
-          return 'navigate' in client
-            ? client.navigate(client.url).catch(() => {})
-            : Promise.resolve()
         })
-      ))
+      })
   )
 })
 

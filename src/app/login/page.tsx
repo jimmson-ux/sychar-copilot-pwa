@@ -254,7 +254,10 @@ export default function LoginPage() {
       localStorage.setItem('sychar_staff_id', selected.id)
     }
 
-    router.push('/dashboard')
+    // Hard redirect — sends a fresh HTTP request with the auth cookie so the
+    // middleware can validate it. router.push() is client-side and can bypass
+    // the middleware cookie check, causing the login hang.
+    window.location.assign('/dashboard')
   }
 
   // ── Filter staff per tab ────────────────────────────────────────────────────

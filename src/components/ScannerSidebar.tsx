@@ -2,24 +2,12 @@
 
 import { useState, useEffect } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
-import { createClient, SupabaseClient } from '@supabase/supabase-js'
+import { createClient } from '@/lib/supabase'
 import {
   ScanLine, FileText, Table2, Receipt, Smartphone,
   CalendarDays, ClipboardList, BarChart2, ChevronLeft, Menu, X,
 } from 'lucide-react'
 
-// Lazy singleton — createClient is deferred until first component render (browser only).
-// Module-level calls would crash Next.js static generation when env vars are absent.
-let _supabase: SupabaseClient | null = null
-function getSupabase(): SupabaseClient {
-  if (!_supabase) {
-    _supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    )
-  }
-  return _supabase
-}
 
 interface NavItem {
   href: string
@@ -53,9 +41,9 @@ export default function ScannerSidebar() {
   const [open, setOpen] = useState(false)
 
   useEffect(() => {
-    getSupabase().auth.getUser().then(({ data: { user } }) => {
+    createClient().auth.getUser().then(({ data: { user } }) => {
       if (!user) return
-      getSupabase()
+      createClient()
         .from('staff_records')
         .select('sub_role')
         .eq('user_id', user.id)
