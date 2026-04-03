@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/DELL/**)",
+      "Bash(npx tsc:*)",
+      "Bash(npx supabase:*)",
+      "Bash(grep -r \"graph.facebook\\\\|WHATSAPP\\\\|META_\\\\|wa.me\" /c/Users/DELL/projects/sychar-system/src --include=*.ts -l)",
+      "Bash(grep -r \"sms_log\\\\|whatsapp\" /c/Users/DELL/projects/sychar-system/src --include=*.ts -l)",
+      "Bash(grep -r \"fee\\\\|fees\\\\|balance\\\\|results\\\\|kcse\\\\|attendance\" /c/Users/DELL/projects/sychar-system/src --include=*.ts -l)",
+      "Bash(supabase db:*)",
+      "Bash(node:*)",
+      "Bash(npm install:*)",
+      "Bash(npm run:*)",
+      "Bash(psql --version)",
+      "Bash(npx tsx:*)",
+      "Bash(vercel --prod)",
+      "Bash(vercel --version)",
+      "Bash(vercel deploy:*)",
+      "Bash(grep -rL \"force-dynamic\" src/app/dashboard/*/page.tsx)",
+      "Bash(npx next:*)"
+    ]
+  }
+}

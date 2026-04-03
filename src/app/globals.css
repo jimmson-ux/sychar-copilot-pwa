@@ -1,0 +1,248 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-display: var(--font-space-grotesk), 'Space Grotesk', sans-serif;
+  --font-sans: var(--font-dm-sans), 'DM Sans', system-ui, sans-serif;
+}
+
+/* ── White theme base ─────────────────────────────────────────────────────── */
+:root {
+  --bg-base:    #f8fafc;
+  --bg-card:    #ffffff;
+  --bg-inner:   #f8fafc;
+  --bg-sidebar: #ffffff;
+
+  /* Role accent colors — overridden per-user by DashboardLayout */
+  --role-primary:   #0891b2;
+  --role-secondary: #22c55e;
+  --role-light:     #f0fdfa;
+  --role-glow:      rgba(8,145,178,0.2);
+  --orb1:           #09D1C7;
+  --orb2:           #22c55e;
+}
+
+/* Role theme overrides via data-role attribute */
+[data-role="principal"] {
+  --role-primary:   #B51A2B;
+  --role-secondary: #FFA586;
+  --role-light:     #fff5f5;
+  --role-glow:      rgba(181,26,43,0.2);
+}
+[data-role="bursar"] {
+  --role-primary:   #2176FF;
+  --role-secondary: #FDCA40;
+  --role-light:     #eff6ff;
+  --role-glow:      rgba(33,118,255,0.2);
+}
+[data-role="dean_of_students"] {
+  --role-primary:   #DC586D;
+  --role-secondary: #FFBB94;
+  --role-light:     #fff5f7;
+  --role-glow:      rgba(220,88,109,0.2);
+}
+[data-role="deputy_principal_academics"],
+[data-role="dean_of_studies"],
+[data-role="hod_subjects"] {
+  --role-primary:   #09D1C7;
+  --role-secondary: #46DFB1;
+  --role-light:     #f0fdfa;
+  --role-glow:      rgba(9,209,199,0.25);
+}
+
+html, body {
+  background-color: #f8fafc;
+  color: #111827;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Scrollbar ───────────────────────────────────────────────────────────── */
+::-webkit-scrollbar       { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
+
+/* ── Keyframe animations ─────────────────────────────────────────────────── */
+@keyframes blob {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33%       { transform: translate(20px, -20px) scale(1.05); }
+  66%       { transform: translate(-10px, 15px) scale(0.97); }
+}
+
+@keyframes fadeSlideUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* ── Utility classes ─────────────────────────────────────────────────────── */
+.card {
+  background: #ffffff;
+  border: 1px solid #f1f5f9;
+  border-radius: 16px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+}
+
+.card-hover {
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.card-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+}
+
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: var(--role-primary, #0891b2);
+  color: white;
+  border: none;
+  border-radius: 12px;
+  padding: 10px 18px;
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s ease, transform 0.1s ease;
+}
+.btn-primary:hover  { opacity: 0.92; }
+.btn-primary:active { transform: scale(0.98); }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: white;
+  color: #374151;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 10px 18px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.btn-secondary:hover { background: #f9fafb; }
+
+.input-white {
+  width: 100%;
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 11px 16px;
+  font-size: 13px;
+  color: #111827;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.input-white:focus {
+  border-color: var(--role-primary, #0891b2);
+  box-shadow: 0 0 0 3px var(--role-glow, rgba(8,145,178,0.15));
+}
+
+/* Badge base */
+.badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.6;
+}
+.badge-success { background: #dcfce7; color: #16a34a; }
+.badge-error   { background: #fee2e2; color: #dc2626; }
+.badge-warning { background: #fef9c3; color: #a16207; }
+.badge-info    { background: #eff6ff; color: #2563eb; }
+.badge-neutral { background: #f3f4f6; color: #6b7280; }
+.badge-purple  { background: #ede9fe; color: #7c3aed; }
+
+/* Skeleton loader */
+.skeleton {
+  background: linear-gradient(90deg, #f3f4f6 25%, #e5e7eb 50%, #f3f4f6 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 6px;
+}
+
+/* Table helpers */
+.table-header th {
+  padding: 10px 14px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 700;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: #f9fafb;
+  border-bottom: 1px solid #f1f5f9;
+}
+.table-row {
+  border-bottom: 1px solid #f9fafb;
+  transition: background 0.1s ease;
+}
+.table-row:hover { background: #f9fafb; }
+
+/* Fade slide up for modals */
+.animate-fadeSlideUp {
+  animation: fadeSlideUp 0.3s ease both;
+}
+
+/* Spin for loading */
+.animate-spin-slow {
+  animation: spin 1s linear infinite;
+}
+
+/* Blob animation — GPU-composited, no layout repaints */
+.animate-blob {
+  animation: blob 8s infinite ease-in-out;
+  will-change: transform;
+  contain: layout style;
+}
+.animation-delay-2000 { animation-delay: 2s; }
+.animation-delay-4000 { animation-delay: 4s; }
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ── Sychar brand frame ── */
+body::after {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 9999;
+  pointer-events: none;
+  border-top:    6px solid #ef4444;
+  border-right:  6px solid #ef4444;
+  border-bottom: 6px solid #FDCA40;
+  border-left:   6px solid #FDCA40;
+}

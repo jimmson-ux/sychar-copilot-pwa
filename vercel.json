@@ -1,0 +1,20 @@
+{
+  "framework": "nextjs",
+  "buildCommand": "npm run build",
+  "outputDirectory": ".next",
+  "regions": ["iad1"],
+  "crons": [
+    {
+      "path": "/api/cron/expire-tokens",
+      "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/cron/compliance-report",
+      "schedule": "0 7 * * 1"
+    },
+    {
+      "path": "/api/cron/send-teacher-links",
+      "schedule": "0 6 * * 1"
+    }
+  ]
+}
