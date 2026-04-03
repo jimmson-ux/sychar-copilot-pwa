@@ -18,7 +18,9 @@
       "Bash(vercel deploy:*)",
       "Bash(grep -rL \"force-dynamic\" src/app/dashboard/*/page.tsx)",
       "Bash(npx next:*)",
-      "Bash(npx vercel:*)"
+      "Bash(npx vercel:*)",
+      "Bash(python3 -c \"import json,sys; p=json.load\\(sys.stdin\\); print\\('version:', p.get\\('version'\\)\\); print\\('exports:', list\\(p.get\\('exports',{}\\).keys\\(\\)\\)\\)\")",
+      "Bash(grep -r \"NEXT_PUBLIC_SUPABASE_URL\" .env*)"
     ]
   }
 }
