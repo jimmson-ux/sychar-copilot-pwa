@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next'
 import { Space_Grotesk, DM_Sans } from 'next/font/google'
 import './globals.css'
 import InstallPrompt from '@/components/InstallPrompt'
+import { SchoolThemeProvider } from '@/components/providers/SchoolThemeProvider'
 
 const spaceGrotesk = Space_Grotesk({
   subsets: ['latin'],
@@ -105,8 +106,10 @@ export default function RootLayout({
         `}} />
       </head>
       <body className={`${spaceGrotesk.variable} ${dmSans.variable}`} style={{ fontFamily: 'var(--font-dm-sans), DM Sans, system-ui, sans-serif' }}>
-        {children}
-        <InstallPrompt />
+        <SchoolThemeProvider>
+          {children}
+          <InstallPrompt />
+        </SchoolThemeProvider>
       </body>
     </html>
   )

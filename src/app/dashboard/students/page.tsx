@@ -1,7 +1,8 @@
 'use client'
 export const dynamic = 'force-dynamic'
 import { useState, useEffect } from 'react'
-import { createClient, SCHOOL_ID } from '@/lib/supabase'
+import { createClient } from '@/lib/supabase'
+import { useSchoolId } from '@/hooks/useSchoolId'
 import { formatDate, formatCurrency, getGradeFromScore, getGradeColor, canSeeGuardianPhone } from '@/lib/roles'
 import { SkeletonTable } from '@/components/ui/Skeleton'
 
@@ -41,6 +42,7 @@ function getAvatarColor(name: string): string {
 }
 
 export default function StudentsPage() {
+  const { schoolId } = useSchoolId()
   const [students, setStudents] = useState<Student[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -53,15 +55,16 @@ export default function StudentsPage() {
 
   useEffect(() => {
     try { const c = JSON.parse(localStorage.getItem('sychar_role_cache') ?? '{}'); setRole(c.r ?? '') } catch { /* ignore */ }
+    if (!schoolId) return
     loadStudents()
-  }, [])
+  }, [schoolId])
 
   async function loadStudents() {
     const supabase = createClient()
     const { data } = await supabase
       .from('students')
       .select('id, full_name, admission_number, class_name, stream_name, gender, parent_name, parent_phone, photo_url')
-      .eq('school_id', SCHOOL_ID)
+      .eq('school_id', schoolId)
       .eq('is_active', true)
       .order('full_name')
     setStudents(data ?? [])

@@ -7,7 +7,7 @@ import { NextResponse } from 'next/server'
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import Anthropic from '@anthropic-ai/sdk'
 
-const SCHOOL_ID  = process.env.NEXT_PUBLIC_SCHOOL_ID ?? '68bd8d34-f2f0-4297-bd18-093328824d84'
+const SCHOOL_ID  = process.env.NEXT_PUBLIC_SCHOOL_ID!
 const BASE_URL   = process.env.NEXT_PUBLIC_APP_URL   ?? 'https://project-o7htk.vercel.app'
 const WA_TOKEN   = process.env.WHATSAPP_API_TOKEN
 const WA_PHONE_ID = process.env.WHATSAPP_PHONE_NUMBER_ID

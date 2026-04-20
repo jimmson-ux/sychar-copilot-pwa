@@ -2,7 +2,8 @@
 export const dynamic = 'force-dynamic'
 
 import { useState, useEffect } from 'react'
-import { createClient, SCHOOL_ID } from '@/lib/supabase'
+import { createClient } from '@/lib/supabase'
+import { useSchoolId } from '@/hooks/useSchoolId'
 import { SkeletonTable } from '@/components/ui/Skeleton'
 
 interface ComplianceRow {
@@ -23,11 +24,12 @@ function scoreColor(score: number) {
 }
 
 export default function DocumentCompliancePage() {
+  const { schoolId } = useSchoolId()
   const [rows, setRows] = useState<ComplianceRow[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
 
-  useEffect(() => { loadCompliance() }, [])
+  useEffect(() => { if (!schoolId) return; loadCompliance() }, [schoolId])
 
   async function loadCompliance() {
     setLoading(true)
@@ -37,13 +39,13 @@ export default function DocumentCompliancePage() {
     const { data: compliance } = await supabase
       .from('document_compliance')
       .select('teacher_id, has_scheme, lesson_plans_count, row_count, compliance_score')
-      .eq('school_id', SCHOOL_ID)
+      .eq('school_id', schoolId)
 
     // Get all active teaching staff
     const { data: staff } = await supabase
       .from('staff_records')
       .select('id, full_name, subject_name, department')
-      .eq('school_id', SCHOOL_ID)
+      .eq('school_id', schoolId)
       .eq('is_active', true)
       .in('sub_role', ['class_teacher', 'bom_teacher', 'hod_subjects', 'hod_pathways'])
       .order('full_name')
@@ -72,12 +74,12 @@ export default function DocumentCompliancePage() {
       const { data: schemes } = await supabase
         .from('schemes_of_work')
         .select('teacher_id')
-        .eq('school_id', SCHOOL_ID)
+        .eq('school_id', schoolId)
 
       const { data: rows_of_work } = await supabase
         .from('records_of_work')
         .select('teacher_id')
-        .eq('school_id', SCHOOL_ID)
+        .eq('school_id', schoolId)
 
       const schemeTeachers = new Set((schemes ?? []).map(s => s.teacher_id))
       const rowCounts: Record<string, number> = {}

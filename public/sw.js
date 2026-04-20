@@ -1,4 +1,4 @@
-// Sychar Service Worker — sychar-v9
+// Sychar Service Worker — sychar-v10
 // Strategy matrix:
 //   Navigation (HTML)  → Network First, no cache (always fresh from server)
 //   Scripts / Styles   → Cache First (content-hashed, safe to cache long-term)
@@ -6,8 +6,10 @@
 //   /api/*             → Network First + fallback to cache
 //   /api/hod/insights  → Stale-While-Revalidate (analytics, slightly stale OK)
 //   Offline fallback   → Inline HTML
+//   Background sync    → sync-attendance (flush IndexedDB queue)
+//                        lesson-heartbeat (ping active lesson)
 
-const CACHE_VERSION = 'sychar-v9'
+const CACHE_VERSION = 'sychar-v10'
 const ASSET_CACHE   = `${CACHE_VERSION}-assets`   // scripts, styles, fonts, images
 const API_CACHE     = `${CACHE_VERSION}-api`        // API responses
 
@@ -149,11 +151,19 @@ self.addEventListener('fetch', event => {
 })
 
 // ── Background sync ───────────────────────────────────────────────────────────
+// For attendance: notify the page so it can flush IndexedDB → API.
+// For heartbeat:  fire the heartbeat API directly (no page interaction needed).
 
 self.addEventListener('sync', event => {
   if (event.tag === 'sync-marks')      event.waitUntil(notify('SYNC_MARKS'))
   if (event.tag === 'sync-attendance') event.waitUntil(notify('SYNC_ATTENDANCE'))
   if (event.tag === 'sync-records')    event.waitUntil(notify('SYNC_RECORDS'))
+  if (event.tag === 'lesson-heartbeat') event.waitUntil(sendHeartbeat())
+})
+
+// Periodic background sync for heartbeat (fires every ~5 min while page is open)
+self.addEventListener('periodicsync', event => {
+  if (event.tag === 'lesson-heartbeat') event.waitUntil(sendHeartbeat())
 })
 
 async function notify(type) {
@@ -161,11 +171,49 @@ async function notify(type) {
   clients.forEach(c => c.postMessage({ type }))
 }
 
-// ── Message handler ───────────────────────────────────────────────────────────
-// Allows pages to request a skip-waiting so updates activate faster
+// Reads active lesson from SW storage (set by the page) and pings the heartbeat API
+async function sendHeartbeat() {
+  const cache = await caches.open('sychar-heartbeat-state')
+  const resp  = await cache.match('/sw-heartbeat-state')
+  if (!resp) return
 
-self.addEventListener('message', event => {
+  const state = await resp.json()
+  // state: { lesson_id, school_id, started_at }
+  if (!state?.lesson_id) return
+
+  // After school hours (after 18:00 local) — skip
+  const hour = new Date().getHours()
+  if (hour >= 18 || hour < 6) return
+
+  try {
+    await fetch('/api/lesson/heartbeat', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ lesson_id: state.lesson_id }),
+    })
+  } catch { /* offline — will retry on next sync */ }
+}
+
+// ── Message handler ───────────────────────────────────────────────────────────
+// SKIP_WAITING     — activate new SW immediately
+// SET_ACTIVE_LESSON — page stores lesson_id for heartbeat SW pings
+// CLEAR_LESSON      — lesson ended, stop heartbeat
+
+self.addEventListener('message', async event => {
   if (event.data?.type === 'SKIP_WAITING') {
     self.skipWaiting()
+    return
+  }
+
+  if (event.data?.type === 'SET_ACTIVE_LESSON') {
+    const cache = await caches.open('sychar-heartbeat-state')
+    const body  = JSON.stringify({ lesson_id: event.data.lesson_id, started_at: Date.now() })
+    await cache.put('/sw-heartbeat-state', new Response(body, { headers: { 'Content-Type': 'application/json' } }))
+    return
+  }
+
+  if (event.data?.type === 'CLEAR_LESSON') {
+    const cache = await caches.open('sychar-heartbeat-state')
+    await cache.delete('/sw-heartbeat-state')
   }
 })

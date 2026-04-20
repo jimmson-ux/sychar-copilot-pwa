@@ -1,7 +1,8 @@
 'use client'
 export const dynamic = 'force-dynamic'
 import { useState, useEffect } from 'react'
-import { createClient, SCHOOL_ID } from '@/lib/supabase'
+import { createClient } from '@/lib/supabase'
+import { useSchoolId } from '@/hooks/useSchoolId'
 import { ROLE_LABELS } from '@/lib/roles'
 import { SkeletonTable } from '@/components/ui/Skeleton'
 
@@ -311,20 +312,21 @@ function SearchResultCard({ member, onClick }: { member: StaffMember; onClick: (
 }
 
 export default function StaffPage() {
+  const { schoolId } = useSchoolId()
   const [staff, setStaff] = useState<StaffMember[]>([])
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState(0)
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<StaffMember | null>(null)
 
-  useEffect(() => { loadStaff() }, [])
+  useEffect(() => { if (!schoolId) return; loadStaff() }, [schoolId])
 
   async function loadStaff() {
     const supabase = createClient()
     const { data } = await supabase
       .from('staff_records')
       .select('id, full_name, email, phone, sub_role, department, subject_specialization, assigned_class_name, tsc_number, photo_url, can_login')
-      .eq('school_id', SCHOOL_ID)
+      .eq('school_id', schoolId)
       .eq('is_active', true)
       .order('full_name')
     setStaff(data ?? [])

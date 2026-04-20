@@ -2,28 +2,10 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import SycharLogo from '@/components/SycharLogo'
 
 const SYCHAR_WORD = 'Sychar'
 const TYPE_MS = 300
-
-function SycharIcon({ size = 48 }: { size?: number }) {
-  return (
-    <svg viewBox="0 0 60 60" width={size} height={size} fill="none">
-      <defs>
-        <linearGradient id="lg" x1="0" y1="0" x2="60" y2="60" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor="#1e40af"/>
-          <stop offset="50%" stopColor="#0891b2"/>
-          <stop offset="100%" stopColor="#22c55e"/>
-        </linearGradient>
-      </defs>
-      <path d="M10 15 Q30 8 50 15" stroke="url(#lg)" strokeWidth="5" strokeLinecap="round"/>
-      <path d="M10 30 Q30 30 50 30" stroke="url(#lg)" strokeWidth="5" strokeLinecap="round"/>
-      <path d="M10 45 Q30 52 50 45" stroke="url(#lg)" strokeWidth="5" strokeLinecap="round"/>
-      <path d="M15 10 Q8 30 15 50" stroke="url(#lg)" strokeWidth="5" strokeLinecap="round"/>
-      <path d="M45 10 Q52 30 45 50" stroke="url(#lg)" strokeWidth="5" strokeLinecap="round"/>
-    </svg>
-  )
-}
 
 export default function LandingPage() {
   const router = useRouter()
@@ -108,7 +90,7 @@ export default function LandingPage() {
 
           {/* Logo card — 80×80 */}
           <div style={{ width: 80, height: 80, borderRadius: 20, background: 'white', boxShadow: '0 4px 24px rgba(0,0,0,0.10)', border: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 32 }}>
-            <SycharIcon size={48} />
+            <SycharLogo size={48} />
           </div>
 
           {/* Sychar typewriter */}

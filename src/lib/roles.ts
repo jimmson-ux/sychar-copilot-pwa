@@ -1,5 +1,3 @@
-export const SCHOOL_ID = '68bd8d34-f2f0-4297-bd18-093328824d84'
-
 export const GUARDIAN_PHONE_ROLES = new Set([
   'principal','deputy_principal','dean_of_students','dean_of_studies',
   'deputy_dean_of_studies','form_principal_form4','form_principal_grade10',

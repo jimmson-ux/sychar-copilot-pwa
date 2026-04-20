@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
-const SCHOOL_ID = process.env.NEXT_PUBLIC_SCHOOL_ID ?? '68bd8d34-f2f0-4297-bd18-093328824d84'
+const SCHOOL_ID = process.env.NEXT_PUBLIC_SCHOOL_ID!
 
 const TEACHING_ROLES = [
   'principal','deputy_principal','dean_of_studies','deputy_dean_of_studies',

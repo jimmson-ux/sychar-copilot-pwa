@@ -4,8 +4,7 @@ export const dynamic = 'force-dynamic'
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-
-const SCHOOL_ID_DISPLAY = '68bd8d34-f2f0-4297-bd18-093328824d84'
+import { useSchoolId } from '@/hooks/useSchoolId'
 
 interface WelfareSettings {
   shareWellnessNudgesWithParents: boolean
@@ -75,6 +74,7 @@ const QUICK_LINKS = [
 ]
 
 export default function SettingsPage() {
+  const { schoolId } = useSchoolId()
   const [settings, setSettings] = useState<WelfareSettings>({
     shareWellnessNudgesWithParents: false,
     welfareVisibleToDeanStudents:   false,
@@ -173,7 +173,7 @@ export default function SettingsPage() {
                 {/* School ID */}
                 <div style={{ background: '#f9fafb', borderRadius: 10, padding: '10px 14px', marginBottom: 16 }}>
                   <div style={{ fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.05em' }}>School ID</div>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginTop: 3, fontFamily: 'monospace', letterSpacing: '0.02em' }}>{SCHOOL_ID_DISPLAY}</div>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginTop: 3, fontFamily: 'monospace', letterSpacing: '0.02em' }}>{schoolId || '—'}</div>
                 </div>
 
                 <a

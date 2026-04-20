@@ -3,8 +3,6 @@ import { createClient } from '@supabase/supabase-js'
 import { requireAuth } from '@/lib/requireAuth'
 import { z } from 'zod'
 
-const SCHOOL_ID = process.env.NEXT_PUBLIC_SCHOOL_ID!
-
 function getClient() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -38,7 +36,7 @@ export async function GET(request: Request) {
   let query = sb
     .from('welfare_logs')
     .select('id, student_id, session_date, wis_score, kbi_tags, follow_up_date, is_confidential, created_at, students!inner(id, full_name, admission_number)')
-    .eq('school_id', SCHOOL_ID)
+    .eq('school_id', auth.schoolId)
     .order('session_date', { ascending: false })
     .limit(50)
 
@@ -79,7 +77,7 @@ export async function POST(request: Request) {
     .from('students')
     .select('id, full_name')
     .eq('id', studentId)
-    .eq('school_id', SCHOOL_ID)
+    .eq('school_id', auth.schoolId)
     .single()
 
   if (!student) return NextResponse.json({ error: 'Student not found' }, { status: 404 })
@@ -87,7 +85,7 @@ export async function POST(request: Request) {
   const { data: log, error: logErr } = await sb
     .from('welfare_logs')
     .insert({
-      school_id:      SCHOOL_ID,
+      school_id:      auth.schoolId,
       student_id:     studentId,
       counsellor_id:  auth.userId,
       session_date:   sessionDate,

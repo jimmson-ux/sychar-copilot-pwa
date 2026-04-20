@@ -2,7 +2,8 @@
 export const dynamic = 'force-dynamic'
 
 import { useState, useEffect } from 'react'
-import { createClient, SCHOOL_ID } from '@/lib/supabase'
+import { createClient } from '@/lib/supabase'
+import { useSchoolId } from '@/hooks/useSchoolId'
 import { formatDate } from '@/lib/roles'
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'https://project-o7htk.vercel.app'
@@ -34,11 +35,12 @@ function CopyButton({ text }: { text: string }) {
 }
 
 export default function VoiceBotPage() {
+  const { schoolId } = useSchoolId()
   const [callLogs, setCallLogs] = useState<CallLog[]>([])
   const [loading, setLoading] = useState(true)
   const [stats, setStats] = useState({ total: 0, today: 0, inbound: 0 })
 
-  useEffect(() => { loadCallLogs() }, [])
+  useEffect(() => { if (!schoolId) return; loadCallLogs() }, [schoolId])
 
   async function loadCallLogs() {
     setLoading(true)
@@ -46,7 +48,7 @@ export default function VoiceBotPage() {
     const { data } = await supabase
       .from('sms_log')
       .select('id, phone_number, message_body, response_body, created_at, direction')
-      .eq('school_id', SCHOOL_ID)
+      .eq('school_id', schoolId)
       .eq('channel', 'voice')
       .order('created_at', { ascending: false })
       .limit(50)

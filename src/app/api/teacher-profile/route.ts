@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
+import { requireAuth } from '@/lib/requireAuth'
 
 function getAdmin() {
   return createClient(
@@ -9,13 +10,16 @@ function getAdmin() {
   )
 }
 
-const SCHOOL_ID = '68bd8d34-f2f0-4297-bd18-093328824d84'
-
 export async function GET(req: NextRequest) {
+  const auth = await requireAuth()
+  if (auth.unauthorized) return auth.unauthorized
+
   const staffId = req.nextUrl.searchParams.get('staff_id')
   if (!staffId) {
     return NextResponse.json({ error: 'staff_id required' }, { status: 400 })
   }
+
+  const SCHOOL_ID = auth.schoolId
 
   const admin = getAdmin()
   const today = new Date().toISOString().split('T')[0]

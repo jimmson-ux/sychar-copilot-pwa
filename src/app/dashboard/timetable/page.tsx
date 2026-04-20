@@ -1,7 +1,8 @@
 'use client'
 export const dynamic = 'force-dynamic'
 import { useState, useEffect } from 'react'
-import { createClient, SCHOOL_ID } from '@/lib/supabase'
+import { createClient } from '@/lib/supabase'
+import { useSchoolId } from '@/hooks/useSchoolId'
 import { KENYAN_SCHOOL_PERIODS, getSubjectColor } from '@/lib/roles'
 import { SkeletonTable } from '@/components/ui/Skeleton'
 
@@ -25,6 +26,7 @@ interface TimetableEntry {
 }
 
 export default function TimetablePage() {
+  const { schoolId } = useSchoolId()
   const [selectedClass, setSelectedClass] = useState(CLASSES[0])
   const [timetable, setTimetable] = useState<TimetableEntry[]>([])
   const [loading, setLoading] = useState(true)
@@ -35,8 +37,9 @@ export default function TimetablePage() {
   }, [])
 
   useEffect(() => {
+    if (!schoolId) return
     loadTimetable()
-  }, [selectedClass])
+  }, [selectedClass, schoolId])
 
   async function loadUserRole() {
     const supabase = createClient()
@@ -56,7 +59,7 @@ export default function TimetablePage() {
     const { data } = await supabase
       .from('timetable')
       .select('id, day, period, subject, subject_code, teacher_initials, room, is_published')
-      .eq('school_id', SCHOOL_ID)
+      .eq('school_id', schoolId)
       .eq('class_name', selectedClass)
       .order('period')
 

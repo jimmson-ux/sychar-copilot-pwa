@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { createClient, SCHOOL_ID } from '@/lib/supabase'
+import { createClient } from '@/lib/supabase'
+import { useSchoolId } from '@/hooks/useSchoolId'
 import {
   Users, GraduationCap, Building2, Briefcase,
   MapPin, Phone, Mail, ChevronLeft, ChevronRight, X,
@@ -143,6 +144,7 @@ function Lightbox({ item, onClose }: { item: GalleryItem; onClose: () => void })
 }
 
 function AddEventModal({ onClose, onSave }: { onClose: () => void; onSave: (ev: CalEvent) => void }) {
+  const { schoolId } = useSchoolId()
   const [date, setDate] = useState('')
   const [title, setTitle] = useState('')
   const [type, setType] = useState('event')
@@ -155,7 +157,7 @@ function AddEventModal({ onClose, onSave }: { onClose: () => void; onSave: (ev: 
       const sb = getSb()
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       await (sb.from('notices') as any).insert({
-        school_id: SCHOOL_ID,
+        school_id: schoolId,
         title: title.trim(),
         notice_type: type,
         event_date: date,
@@ -199,6 +201,7 @@ function AddEventModal({ onClose, onSave }: { onClose: () => void; onSave: (ev: 
 // ── Main page ──────────────────────────────────────────────────────────────────
 
 export default function SchoolProfilePage() {
+  const { schoolId } = useSchoolId()
   const galleryRef = useRef<HTMLDivElement>(null)
 
   const [stats, setStats]               = useState<Stats | null>(null)
@@ -215,18 +218,19 @@ export default function SchoolProfilePage() {
 
   useEffect(() => {
     try { const c = JSON.parse(localStorage.getItem('sychar_role_cache') ?? '{}'); setRole(c.r ?? '') } catch { /* ignore */ }
+    if (!schoolId) return
     loadAll()
-  }, [])
+  }, [schoolId])
 
   async function loadAll() {
     const sb = getSb()
     const [statsRes, staffRes, marksStreamRes, marksSubjectRes, eventsRes] = await Promise.allSettled([
       fetch('/api/school-stats'),
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (sb.from('staff_records') as any).select('full_name, sub_role, department').eq('school_id', SCHOOL_ID).eq('is_active', true),
+      (sb.from('staff_records') as any).select('full_name, sub_role, department').eq('school_id', schoolId).eq('is_active', true),
       sb.from('marks').select('score, student_id'),
       sb.from('marks').select('subject, score'),
-      sb.from('notices').select('title, event_date, notice_type, description').eq('school_id', SCHOOL_ID).in('notice_type', ['event','exam','meeting','sports','academic','extracurricular','kcse']).not('event_date', 'is', null).order('event_date'),
+      sb.from('notices').select('title, event_date, notice_type, description').eq('school_id', schoolId).in('notice_type', ['event','exam','meeting','sports','academic','extracurricular','kcse']).not('event_date', 'is', null).order('event_date'),
     ])
 
     // Stats

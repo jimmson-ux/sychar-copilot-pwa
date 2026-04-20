@@ -2,8 +2,6 @@ import { createServerClient } from '@supabase/ssr'
 import { createClient } from '@supabase/supabase-js'
 import { cookies } from 'next/headers'
 
-export const SCHOOL_ID = '68bd8d34-f2f0-4297-bd18-093328824d84'
-
 export async function createServerSupabaseClient() {
   const cookieStore = await cookies()
 

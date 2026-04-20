@@ -1,7 +1,5 @@
 import { createBrowserClient } from '@supabase/ssr'
 
-export const SCHOOL_ID = '68bd8d34-f2f0-4297-bd18-093328824d84'
-
 /**
  * createBrowserClient from @supabase/ssr stores the auth session in cookies
  * by default. The middleware reads those same cookies to validate the session.

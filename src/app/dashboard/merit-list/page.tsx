@@ -2,7 +2,8 @@
 export const dynamic = 'force-dynamic'
 
 import { useState, useEffect } from 'react'
-import { createClient, SCHOOL_ID } from '@/lib/supabase'
+import { createClient } from '@/lib/supabase'
+import { useSchoolId } from '@/hooks/useSchoolId'
 import { getGradeFromScore, getGradeColor, formatCurrency, STREAM_COLORS } from '@/lib/roles'
 import { SkeletonTable } from '@/components/ui/Skeleton'
 
@@ -26,6 +27,7 @@ const EXAM_TYPES = ['All', 'opener', 'midterm', 'end_term', 'mock', 'kcse']
 const MEDAL: Record<number, string> = { 1: '🥇', 2: '🥈', 3: '🥉' }
 
 export default function MeritListPage() {
+  const { schoolId } = useSchoolId()
   const [results, setResults] = useState<StudentResult[]>([])
   const [loading, setLoading] = useState(true)
   const [formFilter, setFormFilter] = useState('Form 4')
@@ -33,8 +35,9 @@ export default function MeritListPage() {
   const [examType, setExamType] = useState('All')
 
   useEffect(() => {
+    if (!schoolId) return
     loadResults()
-  }, [formFilter, streamFilter, examType])
+  }, [formFilter, streamFilter, examType, schoolId])
 
   async function loadResults() {
     setLoading(true)
@@ -44,7 +47,7 @@ export default function MeritListPage() {
     let q = supabase
       .from('students')
       .select('id, full_name, admission_number, class_name, stream_name, gender')
-      .eq('school_id', SCHOOL_ID)
+      .eq('school_id', schoolId)
       .eq('is_active', true)
 
     if (formFilter !== 'All') q = q.ilike('class_name', `${formFilter}%`)

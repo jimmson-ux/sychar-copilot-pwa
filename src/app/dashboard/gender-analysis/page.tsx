@@ -2,7 +2,8 @@
 export const dynamic = 'force-dynamic'
 
 import { useState, useEffect } from 'react'
-import { createClient, SCHOOL_ID } from '@/lib/supabase'
+import { createClient } from '@/lib/supabase'
+import { useSchoolId } from '@/hooks/useSchoolId'
 import { getGradeFromScore, SUBJECT_COLORS } from '@/lib/roles'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts'
 import { SkeletonTable } from '@/components/ui/Skeleton'
@@ -28,6 +29,7 @@ interface SubjectGap {
 const STEM_SUBJECTS = ['mathematics', 'physics', 'chemistry', 'biology', 'computer']
 
 export default function GenderAnalysisPage() {
+  const { schoolId } = useSchoolId()
   const [loading, setLoading] = useState(true)
   const [formStats, setFormStats] = useState<FormStats[]>([])
   const [subjectGaps, setSubjectGaps] = useState<SubjectGap[]>([])
@@ -36,7 +38,7 @@ export default function GenderAnalysisPage() {
   const [overallBoysAvg, setOverallBoysAvg] = useState(0)
   const [overallGirlsAvg, setOverallGirlsAvg] = useState(0)
 
-  useEffect(() => { loadData() }, [])
+  useEffect(() => { if (!schoolId) return; loadData() }, [schoolId])
 
   async function loadData() {
     setLoading(true)
@@ -45,7 +47,7 @@ export default function GenderAnalysisPage() {
     const { data: students } = await supabase
       .from('students')
       .select('id, class_name, gender')
-      .eq('school_id', SCHOOL_ID)
+      .eq('school_id', schoolId)
       .eq('is_active', true)
 
     if (!students?.length) { setLoading(false); return }

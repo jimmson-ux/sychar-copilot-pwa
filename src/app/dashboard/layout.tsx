@@ -6,6 +6,8 @@ import { useState, useEffect } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createBrowserClient } from '@supabase/ssr'
+import BottomTabBar from '@/components/BottomTabBar'
+import SycharLogo from '@/components/SycharLogo'
 
 function getSupabase() {
   return createBrowserClient(
@@ -70,6 +72,7 @@ const NAV: NavItem[] = [
   { label: 'Discipline',       href: '/dashboard/discipline',          icon: '⚖️', roles: [...LEADERSHIP,'guidance_counselling'] },
   { label: 'HOD Analytics',    href: '/dashboard/hod',                 icon: '📊', roles: [...HODS,...LEADERSHIP] },
   { label: 'Timetable',        href: '/dashboard/timetable',           icon: '📅', roles: 'all' },
+  { label: 'BOM Report',       href: '/dashboard/principal/bom-report', icon: '📑', roles: ['principal'] },
   { label: 'Compliance',       href: '/dashboard/document-compliance', icon: '📋', roles: [...LEADERSHIP,...HODS,'qaso'] },
   { label: 'Merit List',       href: '/dashboard/merit-list',          icon: '🏆', roles: 'all' },
   { label: 'KCSE Predictions', href: '/dashboard/kcse',                icon: '🎯', roles: [...LEADERSHIP,...HODS] },
@@ -82,6 +85,13 @@ const NAV: NavItem[] = [
   { label: 'WhatsApp Bot',     href: '/dashboard/whatsapp-bot',        icon: '💚', roles: ['principal','deputy_principal','bursar','dean_of_students'] },
   { label: 'Gender Analysis',  href: '/dashboard/gender-analysis',     icon: '📈', roles: [...LEADERSHIP,...PATHWAY_HEADS] },
   { label: 'University Match', href: '/dashboard/university-matching', icon: '🤖', roles: 'all' },
+  { label: 'Finance',          href: '/dashboard/finance',             icon: '💼', roles: ['principal','bursar','accountant'] },
+  { label: 'LPO & Imprest',    href: '/dashboard/finance/lpo',         icon: '📜', roles: ['principal','bursar','accountant'] },
+  { label: 'Fee Collection',   href: '/dashboard/finance/fees',        icon: '💳', roles: ['principal','bursar','accountant'] },
+  { label: 'Gate Pass',        href: '/dashboard/gate-pass',           icon: '🚪', roles: [...LEADERSHIP,'storekeeper'] },
+  { label: 'Staff Attendance', href: '/dashboard/staff-attendance',    icon: '📋', roles: [...LEADERSHIP,'qaso'] },
+  { label: 'Welfare',          href: '/dashboard/welfare',             icon: '🍞', roles: ['principal','bursar','accountant','class_teacher','storekeeper'] },
+  { label: 'Visitor Log',      href: '/dashboard/visitor-log',         icon: '📝', roles: [...LEADERSHIP,'storekeeper'] },
   { label: 'Settings',         href: '/dashboard/settings',            icon: '⚙️', roles: 'all' },
 ]
 
@@ -125,6 +135,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     if (typeof window === 'undefined') return
     applyTheme(null)
     fetchUserInfo()
+
+    // Check subscription status — redirect to frozen page if school is suspended
+    // Canteen routes are exempt (student funds, unrelated to subscription)
+    if (!pathname.startsWith('/dashboard/frozen') && !pathname.startsWith('/dashboard/canteen')) {
+      fetch('/api/school/subscription-status')
+        .then(r => r.ok ? r.json() : null)
+        .then(d => {
+          if (d?.status === 'frozen') router.push('/dashboard/frozen')
+        })
+        .catch(() => { /* network error — don't block access */ })
+    }
 
     // Listen for SW_UPDATED message — when new service worker activates,
     // reload the page so users immediately get the latest JS bundles
@@ -201,10 +222,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       }}>
         <div style={{
           width: 32, height: 32, borderRadius: 8, flexShrink: 0,
-          background: 'linear-gradient(135deg, var(--role-primary,#0891b2), var(--role-secondary,#22c55e))',
+          background: 'white',
+          border: '1px solid #e2e8f0',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 16,
-        }}>🏫</div>
+        }}>
+          <SycharLogo size={22} />
+        </div>
         {!collapsed && (
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 11, fontWeight: 600, color: '#111827', fontFamily: 'Space Grotesk, sans-serif', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -367,10 +390,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
         </header>
 
-        <main style={{ flex: 1, overflowY: 'auto' }}>
+        <main style={{ flex: 1, overflowY: 'auto', paddingBottom: 'calc(56px + env(safe-area-inset-bottom, 0px))' }}
+          className="md:pb-0">
           {children}
         </main>
       </div>
+
+      {/* Mobile bottom tab bar — replaces sidebar on small screens */}
+      <BottomTabBar />
     </div>
   )
 }

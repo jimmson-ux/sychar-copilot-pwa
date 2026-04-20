@@ -15,7 +15,7 @@ function getSb() {
   )
 }
 
-const SCHOOL_ID = process.env.NEXT_PUBLIC_SCHOOL_ID ?? '68bd8d34-f2f0-4297-bd18-093328824d84'
+const SCHOOL_ID = process.env.NEXT_PUBLIC_SCHOOL_ID!
 const BASE_URL  = process.env.NEXT_PUBLIC_APP_URL   ?? 'https://project-o7htk.vercel.app'
 
 export async function GET(request: Request) {

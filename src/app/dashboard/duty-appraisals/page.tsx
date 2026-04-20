@@ -3,7 +3,8 @@ export const dynamic = 'force-dynamic'
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient, SCHOOL_ID } from '@/lib/supabase'
+import { createClient } from '@/lib/supabase'
+import { useSchoolId } from '@/hooks/useSchoolId'
 import DutyGradingDashboard from '@/components/DutyGradingDashboard'
 
 interface StaffRow { id: string; full_name: string; sub_role: string }
@@ -22,6 +23,7 @@ interface DutyAssignment {
 const DUTY_TYPES = ['morning','gate','dining','prep','games','evening','weekend','patrol','other']
 
 export default function DutyAppraisalsPage() {
+  const { schoolId } = useSchoolId()
   const [staffId, setStaffId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<'appraisals' | 'assign'>('appraisals')
@@ -77,11 +79,11 @@ export default function DutyAppraisalsPage() {
       </div>
 
       {tab === 'appraisals' && (
-        <DutyGradingDashboard schoolId={SCHOOL_ID} appraiserId={staffId} />
+        <DutyGradingDashboard schoolId={schoolId ?? ''} appraiserId={staffId} />
       )}
 
       {tab === 'assign' && (
-        <DutyAssignPanel schoolId={SCHOOL_ID} />
+        <DutyAssignPanel schoolId={schoolId ?? ''} />
       )}
     </div>
   )

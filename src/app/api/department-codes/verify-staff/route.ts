@@ -7,7 +7,7 @@ import { createClient } from '@supabase/supabase-js'
 import { randomBytes } from 'crypto'
 import { z } from 'zod'
 
-const SCHOOL_ID = process.env.NEXT_PUBLIC_SCHOOL_ID ?? '68bd8d34-f2f0-4297-bd18-093328824d84'
+const SCHOOL_ID = process.env.NEXT_PUBLIC_SCHOOL_ID!
 
 function getClient() {
   return createClient(

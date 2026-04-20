@@ -2,7 +2,8 @@
 export const dynamic = 'force-dynamic'
 
 import { useState, useEffect } from 'react'
-import { createClient, SCHOOL_ID } from '@/lib/supabase'
+import { createClient } from '@/lib/supabase'
+import { useSchoolId } from '@/hooks/useSchoolId'
 import { formatDate } from '@/lib/roles'
 import { SkeletonTable } from '@/components/ui/Skeleton'
 
@@ -42,6 +43,7 @@ const FORM_DEFAULT = {
 }
 
 export default function DisciplinePage() {
+  const { schoolId } = useSchoolId()
   const [incidents, setIncidents] = useState<Incident[]>([])
   const [students, setStudents] = useState<{ id: string; full_name: string; class_name: string }[]>([])
   const [loading, setLoading] = useState(true)
@@ -53,9 +55,10 @@ export default function DisciplinePage() {
   const [form, setForm] = useState(FORM_DEFAULT)
 
   useEffect(() => {
+    if (!schoolId) return
     loadIncidents()
     loadStudents()
-  }, [])
+  }, [schoolId])
 
   async function loadIncidents() {
     setLoading(true)
@@ -63,7 +66,7 @@ export default function DisciplinePage() {
     const { data } = await supabase
       .from('discipline_records')
       .select('id, incident_type, severity, incident_date, description, action_taken, parent_notified, dean_reviewed, status, student_id, class_name, students(full_name)')
-      .eq('school_id', SCHOOL_ID)
+      .eq('school_id', schoolId)
       .order('incident_date', { ascending: false })
       .limit(200)
 
@@ -92,7 +95,7 @@ export default function DisciplinePage() {
     const { data } = await supabase
       .from('students')
       .select('id, full_name, class_name')
-      .eq('school_id', SCHOOL_ID)
+      .eq('school_id', schoolId)
       .eq('is_active', true)
       .order('full_name')
     setStudents(data ?? [])
@@ -106,7 +109,7 @@ export default function DisciplinePage() {
     const student = students.find(s => s.id === form.student_id)
 
     const { error } = await supabase.from('discipline_records').insert({
-      school_id: SCHOOL_ID,
+      school_id: schoolId,
       student_id: form.student_id,
       class_name: student?.class_name ?? '',
       incident_type: form.incident_type,

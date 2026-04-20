@@ -3,6 +3,7 @@
 
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
+import { requireAuth } from '@/lib/requireAuth'
 
 function getClient() {
   return createClient(
@@ -39,12 +40,11 @@ const pct = (n: number, total: number) =>
 
 // ── GET ───────────────────────────────────────────────────────────────────────
 export async function GET() {
+  const auth = await requireAuth()
+  if (auth.unauthorized) return auth.unauthorized
+
   const sb = getClient()
-  const SCHOOL_ID = process.env.NEXT_PUBLIC_SCHOOL_ID
-  if (!SCHOOL_ID) {
-    console.error('[pathways] SCHOOL_ID not set')
-    return NextResponse.json({ error: 'Server misconfigured' }, { status: 500 })
-  }
+  const SCHOOL_ID = auth.schoolId
 
   try {
     const [

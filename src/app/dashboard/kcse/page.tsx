@@ -2,7 +2,8 @@
 export const dynamic = 'force-dynamic'
 
 import { useState, useEffect } from 'react'
-import { createClient, SCHOOL_ID } from '@/lib/supabase'
+import { createClient } from '@/lib/supabase'
+import { useSchoolId } from '@/hooks/useSchoolId'
 import { getGradeFromScore, getGradeColor, getGradePoints, STREAM_COLORS } from '@/lib/roles'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 import { SkeletonTable } from '@/components/ui/Skeleton'
@@ -29,13 +30,14 @@ const GRADE_BG: Record<string, string> = {
 type FilterMode = 'all' | 'high_risk' | 'a_target'
 
 export default function KcsePage() {
+  const { schoolId } = useSchoolId()
   const [predictions, setPredictions] = useState<StudentPrediction[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<FilterMode>('all')
   const [aiRec, setAiRec] = useState('')
   const [aiLoading, setAiLoading] = useState(false)
 
-  useEffect(() => { loadPredictions() }, [])
+  useEffect(() => { if (!schoolId) return; loadPredictions() }, [schoolId])
 
   async function loadPredictions() {
     setLoading(true)
@@ -44,7 +46,7 @@ export default function KcsePage() {
     const { data: students } = await supabase
       .from('students')
       .select('id, full_name, admission_number, class_name, stream_name, gender')
-      .eq('school_id', SCHOOL_ID)
+      .eq('school_id', schoolId)
       .eq('is_active', true)
       .ilike('class_name', 'Form 4%')
 

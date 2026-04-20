@@ -2,9 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase'
-
-
-const SCHOOL_ID = '68bd8d34-f2f0-4297-bd18-093328824d84'
+import { useSchoolId } from '@/hooks/useSchoolId'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -103,6 +101,7 @@ function formatKES(amount: number): string {
 // ── Main Component ───────────────────────────────────────────────────────────
 
 export default function UniversityMatchingDashboard() {
+  const { schoolId } = useSchoolId()
   const [students, setStudents] = useState<StudentWithData[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -125,7 +124,7 @@ export default function UniversityMatchingDashboard() {
       const { data: studs, error: sErr } = await createClient()
         .from('students')
         .select('id, full_name, gender, class_name, stream_name, pathway, kcpe_marks, curriculum_type')
-        .eq('school_id', SCHOOL_ID)
+        .eq('school_id', schoolId)
         .order('full_name', { ascending: true })
 
       if (sErr) throw new Error(sErr.message)
@@ -145,7 +144,7 @@ export default function UniversityMatchingDashboard() {
         createClient()
           .from('ai_career_reports')
           .select('id, student_id, university_matches, generated_at')
-          .eq('school_id', SCHOOL_ID)
+          .eq('school_id', schoolId)
           .in('student_id', studentIds),
       ])
 
@@ -177,7 +176,7 @@ export default function UniversityMatchingDashboard() {
     }
   }, [])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => { if (!schoolId) return; load() }, [load, schoolId])
 
   const generateOne = useCallback(async (student: StudentWithData) => {
     setGenerating(prev => new Set([...prev, student.id]))

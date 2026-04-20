@@ -1,13 +1,13 @@
 {
-  "name": "Sychar Copilot",
+  "name": "Sychar CoPilot",
   "short_name": "Sychar",
   "description": "Intelligent school management for Kenyan secondary schools",
-  "start_url": "/",
+  "start_url": "/dashboard/teacher",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait-primary",
-  "background_color": "#ffffff",
-  "theme_color": "#0891b2",
+  "background_color": "#1e3a8a",
+  "theme_color": "#1e3a8a",
   "categories": ["education", "productivity"],
   "icons": [
     {
@@ -38,6 +38,11 @@
     {
       "name": "Record Lesson",
       "url": "/record",
+      "icons": [{"src": "/icon-192.png", "sizes": "192x192"}]
+    },
+    {
+      "name": "Attendance",
+      "url": "/dashboard/teacher",
       "icons": [{"src": "/icon-192.png", "sizes": "192x192"}]
     }
   ]

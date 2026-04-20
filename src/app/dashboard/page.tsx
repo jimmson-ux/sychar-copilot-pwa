@@ -3,7 +3,8 @@ export const dynamic = 'force-dynamic'
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient, SCHOOL_ID } from '@/lib/supabase'
+import { createClient } from '@/lib/supabase'
+// schoolId is resolved dynamically inside loadDashboard() from staff_records
 import { setRoleTheme, formatDate } from '@/lib/roles'
 import SmartAlerts from '@/components/SmartAlerts'
 import { SkeletonStats, SkeletonCard } from '@/components/ui/Skeleton'
@@ -59,6 +60,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true)
   const [userRole, setUserRole] = useState('')
   const [userName, setUserName] = useState('')
+  const [schoolId, setSchoolId] = useState('')
   const [pathwayOverview, setPathwayOverview] = useState<PathwayOverview | null>(null)
   const [pathwayRows, setPathwayRows] = useState<PathwayRow[]>([])
   const [pathwayLoading, setPathwayLoading] = useState(false)
@@ -75,10 +77,12 @@ export default function DashboardPage() {
 
       const { data: staff } = await supabase
         .from('staff_records')
-        .select('full_name, sub_role, role')
+        .select('full_name, sub_role, role, school_id')
         .eq('user_id', user.id)
         .single()
 
+      const resolvedSchoolId = staff?.school_id as string
+      setSchoolId(resolvedSchoolId)
       const role = staff?.sub_role || staff?.role || 'class_teacher'
       setUserRole(role)
       setUserName(staff?.full_name?.split(' ')[0] || 'Staff')
@@ -110,14 +114,14 @@ export default function DashboardPage() {
 
       // Load stats in parallel
       const [studentsRes, boysRes, girlsRes, staffRes, feeRes, marksRes, noticesRes, incidentsRes] = await Promise.allSettled([
-        supabase.from('students').select('id', { count: 'exact', head: true }).eq('school_id', SCHOOL_ID).eq('is_active', true),
-        supabase.from('students').select('id', { count: 'exact', head: true }).eq('school_id', SCHOOL_ID).eq('is_active', true).eq('gender', 'male'),
-        supabase.from('students').select('id', { count: 'exact', head: true }).eq('school_id', SCHOOL_ID).eq('is_active', true).eq('gender', 'female'),
-        supabase.from('staff_records').select('id', { count: 'exact', head: true }).eq('school_id', SCHOOL_ID).eq('is_active', true).in('sub_role', TEACHING_ROLES),
-        supabase.from('fee_balances').select('total_fees, amount_paid').eq('school_id', SCHOOL_ID),
-        supabase.from('marks').select('score').eq('school_id', SCHOOL_ID).not('score', 'is', null).limit(500),
-        supabase.from('notices').select('id, title, content, created_at').eq('school_id', SCHOOL_ID).eq('is_active', true).order('created_at', { ascending: false }).limit(5),
-        supabase.from('discipline_records').select('id, incident_type, severity, incident_date, class_name, students(full_name)').eq('school_id', SCHOOL_ID).order('incident_date', { ascending: false }).limit(5),
+        supabase.from('students').select('id', { count: 'exact', head: true }).eq('school_id', resolvedSchoolId).eq('is_active', true),
+        supabase.from('students').select('id', { count: 'exact', head: true }).eq('school_id', resolvedSchoolId).eq('is_active', true).eq('gender', 'male'),
+        supabase.from('students').select('id', { count: 'exact', head: true }).eq('school_id', resolvedSchoolId).eq('is_active', true).eq('gender', 'female'),
+        supabase.from('staff_records').select('id', { count: 'exact', head: true }).eq('school_id', resolvedSchoolId).eq('is_active', true).in('sub_role', TEACHING_ROLES),
+        supabase.from('fee_balances').select('total_fees, amount_paid').eq('school_id', resolvedSchoolId),
+        supabase.from('marks').select('score').eq('school_id', resolvedSchoolId).not('score', 'is', null).limit(500),
+        supabase.from('notices').select('id, title, content, created_at').eq('school_id', resolvedSchoolId).eq('is_active', true).order('created_at', { ascending: false }).limit(5),
+        supabase.from('discipline_records').select('id, incident_type, severity, incident_date, class_name, students(full_name)').eq('school_id', resolvedSchoolId).order('incident_date', { ascending: false }).limit(5),
       ])
 
       const totalStudents = studentsRes.status === 'fulfilled' ? (studentsRes.value.count ?? 0) : 0
@@ -191,7 +195,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Smart Alerts */}
-      <SmartAlerts userRole={userRole} schoolId={SCHOOL_ID} />
+      <SmartAlerts userRole={userRole} schoolId={schoolId} />
 
       {/* Stats Grid */}
       {loading ? (

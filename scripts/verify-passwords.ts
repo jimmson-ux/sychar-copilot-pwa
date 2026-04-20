@@ -34,7 +34,7 @@ loadEnv()
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const SERVICE_KEY  = process.env.SUPABASE_SERVICE_ROLE_KEY!
-const SCHOOL_ID    = '68bd8d34-f2f0-4297-bd18-093328824d84'
+const SCHOOL_ID    = process.env.NEXT_PUBLIC_SCHOOL_ID!
 
 const adminSb = createClient(SUPABASE_URL, SERVICE_KEY, {
   auth: { autoRefreshToken: false, persistSession: false },
