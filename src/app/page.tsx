@@ -4,137 +4,224 @@ import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import SycharLogo from '@/components/SycharLogo'
 
-const SYCHAR_WORD = 'Sychar'
-const TYPE_MS = 300
+const TITLE    = 'Sychar'
+const TAGLINE  = 'The future of educational management. Seamless, intelligent, and designed for the next generation of schools.'
+
+const TITLE_MS   = 160   // ms per character for title
+const TAGLINE_MS = 22    // ms per character for tagline
 
 export default function LandingPage() {
   const router = useRouter()
 
-  const [typed, setTyped] = useState('')
-  const [showCursor, setShowCursor] = useState(true)
-  const [typingDone, setTypingDone] = useState(false)
-  const [cursorHidden, setCursorHidden] = useState(false)
+  // ── Title typewriter ─────────────────────────────────────────
+  const [title, setTitle]           = useState('')
+  const [titleDone, setTitleDone]   = useState(false)
+  const [titleCursor, setTitleCursor] = useState(true)
+  const [titleCursorHidden, setTitleCursorHidden] = useState(false)
 
+  // ── Tagline typewriter ───────────────────────────────────────
+  const [tagline, setTagline]             = useState('')
+  const [taglineStarted, setTaglineStarted] = useState(false)
+  const [taglineDone, setTaglineDone]     = useState(false)
+  const [taglineCursor, setTaglineCursor] = useState(true)
+  const [taglineCursorHidden, setTaglineCursorHidden] = useState(false)
+
+  // ── Reveal flags ─────────────────────────────────────────────
+  const [showLogo,    setShowLogo]    = useState(false)
   const [showCopilot, setShowCopilot] = useState(false)
-  const [showTagline, setShowTagline] = useState(false)
-  const [showButton, setShowButton] = useState(false)
+  const [showButton,  setShowButton]  = useState(false)
 
-  const typingRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const titleTimer   = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const taglineTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Typewriter — starts immediately, 300ms per letter
+  // Logo fades in immediately
+  useEffect(() => { setTimeout(() => setShowLogo(true), 200) }, [])
+
+  // Title typewriter
   useEffect(() => {
     let idx = 0
-    function typeNext() {
+    const type = () => {
       idx++
-      setTyped(SYCHAR_WORD.slice(0, idx))
-      if (idx < SYCHAR_WORD.length) {
-        typingRef.current = setTimeout(typeNext, TYPE_MS)
+      setTitle(TITLE.slice(0, idx))
+      if (idx < TITLE.length) {
+        titleTimer.current = setTimeout(type, TITLE_MS)
       } else {
-        setTypingDone(true)
-        // Cursor disappears 2s after typing completes
-        setTimeout(() => setCursorHidden(true), 2000)
+        setTitleDone(true)
+        setTimeout(() => setTitleCursorHidden(true), 1200)
       }
     }
-    typingRef.current = setTimeout(typeNext, TYPE_MS)
-    return () => { if (typingRef.current) clearTimeout(typingRef.current) }
+    titleTimer.current = setTimeout(type, 600)
+    return () => { if (titleTimer.current) clearTimeout(titleTimer.current) }
   }, [])
 
-  // Cursor blink while typing
+  // Title cursor blink
   useEffect(() => {
-    const t = setInterval(() => setShowCursor(v => !v), 530)
+    const t = setInterval(() => setTitleCursor(v => !v), 530)
     return () => clearInterval(t)
   }, [])
 
-  // Reveal sequence — absolute timings from page load
+  // COPILOT pill appears shortly after title finishes
   useEffect(() => {
-    const t1 = setTimeout(() => setShowCopilot(true), 2000)
-    const t2 = setTimeout(() => setShowTagline(true), 2800)
-    const t3 = setTimeout(() => setShowButton(true), 3500)
-    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3) }
+    const delay = 600 + TITLE.length * TITLE_MS + 400
+    const t = setTimeout(() => setShowCopilot(true), delay)
+    return () => clearTimeout(t)
+  }, [])
+
+  // Start tagline typewriter after COPILOT appears
+  useEffect(() => {
+    const startDelay = 600 + TITLE.length * TITLE_MS + 900
+    const t = setTimeout(() => setTaglineStarted(true), startDelay)
+    return () => clearTimeout(t)
+  }, [])
+
+  useEffect(() => {
+    if (!taglineStarted) return
+    let idx = 0
+    const type = () => {
+      idx++
+      setTagline(TAGLINE.slice(0, idx))
+      if (idx < TAGLINE.length) {
+        taglineTimer.current = setTimeout(type, TAGLINE_MS)
+      } else {
+        setTaglineDone(true)
+        setTimeout(() => setTaglineCursorHidden(true), 1000)
+      }
+    }
+    taglineTimer.current = setTimeout(type, TAGLINE_MS)
+    return () => { if (taglineTimer.current) clearTimeout(taglineTimer.current) }
+  }, [taglineStarted])
+
+  // Tagline cursor blink
+  useEffect(() => {
+    const t = setInterval(() => setTaglineCursor(v => !v), 530)
+    return () => clearInterval(t)
+  }, [])
+
+  // Button appears after tagline finishes typing
+  useEffect(() => {
+    const buttonDelay = 600 + TITLE.length * TITLE_MS + 900 + TAGLINE.length * TAGLINE_MS + 600
+    const t = setTimeout(() => setShowButton(true), buttonDelay)
+    return () => clearTimeout(t)
   }, [])
 
   return (
     <>
       <style>{`
-        @keyframes blobAnim {
+        @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&family=DM+Sans:wght@400;500&display=swap');
+
+        @keyframes blobFloat {
           0%,100% { transform: translate(0,0) scale(1); }
-          33%      { transform: translate(20px,-20px) scale(1.05); }
-          66%      { transform: translate(-10px,15px) scale(0.97); }
+          40%      { transform: translate(18px,-22px) scale(1.04); }
+          70%      { transform: translate(-12px,14px) scale(0.97); }
         }
-        @keyframes fadeSlideUp {
-          from { opacity:0; transform:translateY(14px); }
+        @keyframes fadeUp {
+          from { opacity:0; transform:translateY(16px); }
           to   { opacity:1; transform:translateY(0); }
         }
-        @keyframes slideInRight {
-          from { opacity:0; transform:translateX(20px); }
-          to   { opacity:1; transform:translateX(0); }
+        @keyframes popIn {
+          from { opacity:0; transform:scale(0.8) translateY(6px); }
+          to   { opacity:1; transform:scale(1) translateY(0); }
         }
-        .blob1 { animation: blobAnim 9s infinite ease-in-out; }
-        .blob2 { animation: blobAnim 11s infinite ease-in-out 1.5s; }
-        .blob3 { animation: blobAnim 13s infinite ease-in-out 3s; }
-        .copilot-pill { animation: slideInRight 0.6s ease forwards; }
-        .tagline-text { animation: fadeSlideUp 0.8s ease forwards; }
-        .btn-portal { animation: fadeSlideUp 0.6s ease forwards; }
-        .btn-portal:hover { transform: scale(1.03); box-shadow: 0 8px 30px rgba(0,0,0,0.15) !important; }
+        @keyframes fadeIn {
+          from { opacity:0; }
+          to   { opacity:1; }
+        }
+
+        .blob1 { animation: blobFloat 10s infinite ease-in-out; }
+        .blob2 { animation: blobFloat 13s infinite ease-in-out 2s; }
+        .blob3 { animation: blobFloat 16s infinite ease-in-out 4s; }
+
+        .logo-card  { animation: fadeUp  0.7s ease forwards; }
+        .copilot-pill { animation: popIn 0.5s cubic-bezier(0.34,1.56,0.64,1) forwards; }
+        .btn-enter  { animation: fadeUp 0.6s ease forwards; transition: transform 0.2s, box-shadow 0.2s; }
+        .btn-enter:hover { transform: scale(1.04) !important; box-shadow: 0 10px 36px rgba(0,0,0,0.18) !important; }
+
+        .tagline-wrap { min-height: 5em; }
+
+        .footer-contact a { color: #6b7280; text-decoration: none; }
+        .footer-contact a:hover { color: #2EA8E0; text-decoration: underline; }
       `}</style>
 
-      <div style={{ minHeight: '100vh', background: '#ffffff', position: 'relative', overflowX: 'hidden', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+      <div style={{
+        minHeight: '100vh',
+        background: 'linear-gradient(160deg, #f0fdf9 0%, #ffffff 45%, #f0f9ff 100%)',
+        position: 'relative',
+        overflowX: 'hidden',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        fontFamily: 'DM Sans, sans-serif',
+      }}>
 
         {/* Ambient blobs */}
-        <div className="blob1" style={{ position: 'fixed', top: -80, left: -80, width: 400, height: 400, borderRadius: '50%', background: '#09D1C7', opacity: 0.06, filter: 'blur(100px)', pointerEvents: 'none' }} />
-        <div className="blob2" style={{ position: 'fixed', bottom: -60, right: -60, width: 350, height: 350, borderRadius: '50%', background: '#22c55e', opacity: 0.07, filter: 'blur(100px)', pointerEvents: 'none' }} />
-        <div className="blob3" style={{ position: 'fixed', top: '45%', left: '50%', transform: 'translate(-50%,-50%)', width: 300, height: 300, borderRadius: '50%', background: '#2176FF', opacity: 0.06, filter: 'blur(80px)', pointerEvents: 'none' }} />
+        <div className="blob1" style={{ position:'fixed', top:-100, left:-100, width:500, height:500, borderRadius:'50%', background:'#09D1C7', opacity:0.07, filter:'blur(120px)', pointerEvents:'none' }} />
+        <div className="blob2" style={{ position:'fixed', bottom:-80, right:-80, width:420, height:420, borderRadius:'50%', background:'#22c55e', opacity:0.07, filter:'blur(110px)', pointerEvents:'none' }} />
+        <div className="blob3" style={{ position:'fixed', top:'40%', left:'55%', width:340, height:340, borderRadius:'50%', background:'#2EA8E0', opacity:0.05, filter:'blur(90px)', pointerEvents:'none' }} />
 
-        {/* Content */}
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', maxWidth: 520, padding: '72px 24px 80px' }}>
+        {/* ── Main content ───────────────────────────── */}
+        <div style={{
+          display: 'flex', flexDirection: 'column', alignItems: 'center',
+          width: '100%', maxWidth: 540,
+          padding: '80px 24px 100px',
+          flex: 1,
+        }}>
 
-          {/* Logo card — 80×80 */}
-          <div style={{ width: 80, height: 80, borderRadius: 20, background: 'white', boxShadow: '0 4px 24px rgba(0,0,0,0.10)', border: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 32 }}>
-            <SycharLogo size={48} />
-          </div>
+          {/* SycharLogo card */}
+          {showLogo && (
+            <div className="logo-card" style={{
+              width: 84, height: 84, borderRadius: 22,
+              background: 'white',
+              boxShadow: '0 4px 28px rgba(0,0,0,0.09)',
+              border: '1px solid #e8f4f8',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              marginBottom: 36,
+            }}>
+              <SycharLogo size={52} />
+            </div>
+          )}
 
-          {/* Sychar typewriter */}
-          <div style={{ textAlign: 'center' }}>
+          {/* Title typewriter */}
+          <div style={{ textAlign: 'center', lineHeight: 1, minHeight: '1.1em' }}>
             <span style={{
-              fontSize: 'clamp(52px, 10vw, 88px)',
+              fontSize: 'clamp(56px, 11vw, 96px)',
               fontWeight: 700,
               fontFamily: 'Space Grotesk, sans-serif',
-              background: 'linear-gradient(to right, #1e40af, #0891b2, #22c55e)',
+              background: 'linear-gradient(to right, #1e3a8a 0%, #0891b2 50%, #22c55e 100%)',
               WebkitBackgroundClip: 'text',
               WebkitTextFillColor: 'transparent',
               backgroundClip: 'text',
-              lineHeight: 1,
               display: 'inline-block',
             }}>
-              {typed}
+              {title}
             </span>
-            {!cursorHidden && (
+            {!titleCursorHidden && (
               <span style={{
                 display: 'inline-block',
                 width: 3,
-                height: 'clamp(48px, 9vw, 80px)',
+                height: 'clamp(52px, 10vw, 88px)',
                 background: '#22c55e',
                 marginLeft: 4,
                 verticalAlign: 'middle',
-                opacity: showCursor ? 1 : (typingDone ? 0 : 1),
+                opacity: titleCursor ? 1 : (titleDone ? 0 : 1),
                 transition: 'opacity 0.1s',
+                borderRadius: 2,
               }} />
             )}
           </div>
 
-          {/* COPILOT pill — own line */}
+          {/* COPILOT pill */}
           {showCopilot && (
-            <div className="copilot-pill" style={{ marginTop: 16, textAlign: 'center' }}>
+            <div className="copilot-pill" style={{ marginTop: 18, textAlign: 'center' }}>
               <span style={{
                 display: 'inline-block',
                 background: 'linear-gradient(135deg, #0891b2, #22c55e)',
                 color: 'white',
                 fontWeight: 700,
-                letterSpacing: '0.18em',
-                fontSize: 15,
-                padding: '10px 22px',
+                letterSpacing: '0.2em',
+                fontSize: 14,
+                padding: '9px 24px',
                 borderRadius: 100,
-                boxShadow: '0 4px 20px rgba(8,145,178,0.25)',
+                boxShadow: '0 4px 18px rgba(8,145,178,0.28)',
                 fontFamily: 'Space Grotesk, sans-serif',
               }}>
                 COPILOT
@@ -142,29 +229,42 @@ export default function LandingPage() {
             </div>
           )}
 
-          {/* Tagline */}
-          {showTagline && (
-            <p className="tagline-text" style={{
+          {/* Tagline typewriter */}
+          {taglineStarted && (
+            <p className="tagline-wrap" style={{
               textAlign: 'center',
               maxWidth: 460,
               fontSize: 17,
               color: '#6b7280',
-              lineHeight: 1.7,
-              margin: '28px auto 0',
+              lineHeight: 1.75,
+              margin: '30px auto 0',
               fontFamily: 'DM Sans, sans-serif',
             }}>
-              The future of educational management. Seamless, intelligent, and designed for the next generation of schools.
+              {tagline}
+              {!taglineCursorHidden && (
+                <span style={{
+                  display: 'inline-block',
+                  width: 2,
+                  height: '1em',
+                  background: '#0891b2',
+                  marginLeft: 2,
+                  verticalAlign: 'middle',
+                  opacity: taglineCursor ? 1 : (taglineDone ? 0 : 1),
+                  transition: 'opacity 0.1s',
+                  borderRadius: 1,
+                }} />
+              )}
             </p>
           )}
 
           {/* Enter Portal button */}
           {showButton && (
             <button
-              className="btn-portal"
+              className="btn-enter"
               onClick={() => router.push('/login')}
               style={{
-                marginTop: 40,
-                padding: '16px 48px',
+                marginTop: 44,
+                padding: '16px 52px',
                 borderRadius: 100,
                 background: '#111827',
                 color: 'white',
@@ -173,21 +273,29 @@ export default function LandingPage() {
                 fontFamily: 'Space Grotesk, sans-serif',
                 border: 'none',
                 cursor: 'pointer',
-                transition: 'transform 0.2s ease, box-shadow 0.2s ease',
+                letterSpacing: '0.01em',
               }}
             >
               Enter Portal →
             </button>
           )}
-
         </div>
 
-        {/* Footer — pinned to bottom */}
-        <div style={{ position: 'absolute', bottom: 24, left: 0, right: 0, textAlign: 'center' }}>
-          <span style={{ fontSize: 12, color: '#9ca3af', fontFamily: 'DM Sans, sans-serif' }}>
+        {/* ── Footer ────────────────────────────────── */}
+        <footer style={{
+          width: '100%', textAlign: 'center',
+          padding: '16px 24px 28px',
+          display: 'flex', flexDirection: 'column', gap: 6,
+        }}>
+          <div style={{ fontSize: 12, color: '#9ca3af', fontFamily: 'DM Sans, sans-serif' }}>
             v1.0 · Sychar Copilot · Nkoroi Mixed Day Secondary School
-          </span>
-        </div>
+          </div>
+          <div className="footer-contact" style={{ fontSize: 12, color: '#9ca3af', fontFamily: 'DM Sans, sans-serif' }}>
+            James Mark · Lead Developer ·{' '}
+            <a href="mailto:peromark24@gmail.com">peromark24@gmail.com</a>
+          </div>
+        </footer>
+
       </div>
     </>
   )
