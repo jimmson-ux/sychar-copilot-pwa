@@ -37,7 +37,10 @@
       "Bash(grep -A 30 \"CREATE TABLE IF NOT EXISTS marks\" C:/Users/DELL/supabase/migrations/*.sql)",
       "Bash(grep -n \"CREATE TABLE.*classes\\\\|CREATE TABLE.*streams\\\\|CREATE TABLE.*terms\\\\|teacher_assignments\\\\|teacher_subjects\" C:/Users/DELL/supabase/migrations/*.sql)",
       "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(json.dumps\\({**d.get\\('dependencies',{}\\), **d.get\\('devDependencies',{}\\)}, indent=2\\)\\)\")",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(git remote *)"
     ]
   }
 }
