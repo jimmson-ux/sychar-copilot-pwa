@@ -6,6 +6,7 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import Anthropic from '@anthropic-ai/sdk'
+import { rateLimit, LIMITS } from '@/lib/rateLimit'
 
 const SCHOOL_ID  = process.env.NEXT_PUBLIC_SCHOOL_ID!
 const BASE_URL   = process.env.NEXT_PUBLIC_APP_URL   ?? 'https://project-o7htk.vercel.app'
@@ -273,6 +274,10 @@ export async function GET(request: Request) {
 
 // ── POST — incoming messages ─────────────────────────────────────────────────
 export async function POST(request: Request) {
+  const ip = request.headers.get('x-forwarded-for')?.split(',')[0].trim() || 'unknown'
+  const { allowed } = rateLimit(ip, LIMITS.WHATSAPP.max, LIMITS.WHATSAPP.window)
+  if (!allowed) return new Response('Too many requests', { status: 429 })
+
   let body: unknown
   try { body = await request.json() } catch {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })

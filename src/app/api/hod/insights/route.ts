@@ -6,6 +6,8 @@ import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/requireAuth'
 import { fetchHodData } from '@/lib/hodData'
+import { corsHeaders, handleCors } from '@/lib/cors'
+import { rateLimit, LIMITS } from '@/lib/rateLimit'
 
 function getClient() {
   return createClient(
@@ -25,9 +27,18 @@ interface RawInsight {
   recommendation: string
 }
 
+export async function OPTIONS(req: Request) {
+  return handleCors(req) || new Response(null, { status: 204 })
+}
+
 // ── GET ──────────────────────────────────────────────────────────────────────
 
-export async function GET() {
+export async function GET(req: Request) {
+  const origin = req.headers.get('origin')
+  const ip = req.headers.get('x-forwarded-for')?.split(',')[0].trim() || 'unknown'
+  const { allowed } = rateLimit(`${ip}:ai`, LIMITS.AI_CHAT.max, LIMITS.AI_CHAT.window)
+  if (!allowed) return NextResponse.json({ error: 'Too many requests.' }, { status: 429, headers: corsHeaders(origin) })
+
   const sb = getClient()
   const auth = await requireAuth()
   if (auth.unauthorized) return auth.unauthorized
@@ -48,7 +59,12 @@ export async function GET() {
 
 // ── POST ─────────────────────────────────────────────────────────────────────
 
-export async function POST() {
+export async function POST(req: Request) {
+  const origin = req.headers.get('origin')
+  const ip = req.headers.get('x-forwarded-for')?.split(',')[0].trim() || 'unknown'
+  const { allowed } = rateLimit(`${ip}:ai`, LIMITS.AI_CHAT.max, LIMITS.AI_CHAT.window)
+  if (!allowed) return NextResponse.json({ error: 'Too many requests.' }, { status: 429, headers: corsHeaders(origin) })
+
   const sb = getClient()
   const auth = await requireAuth()
   if (auth.unauthorized) return auth.unauthorized

@@ -1,0 +1,35 @@
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+
+const NKOROI_SCHOOL_ID = '68bd8d34-f2f0-4297-bd18-093328824d84'
+
+export async function verifyRequest(req: Request): Promise<{
+  userId: string; schoolId: string; role: string
+} | null> {
+  const authHeader = req.headers.get('authorization')
+  if (!authHeader) return null
+
+  const supabase = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_ANON_KEY')!,
+    { global: { headers: { authorization: authHeader } } }
+  )
+
+  const { data: { user }, error } = await supabase.auth.getUser()
+  if (error || !user) return null
+
+  const serviceClient = createClient(
+    Deno.env.get('SUPABASE_URL')!,
+    Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+  )
+
+  const { data: staff } = await serviceClient
+    .from('staff_records')
+    .select('sub_role, school_id')
+    .eq('user_id', user.id)
+    .single()
+
+  if (!staff) return null
+  if (staff.school_id !== NKOROI_SCHOOL_ID) return null
+
+  return { userId: user.id, schoolId: staff.school_id, role: staff.sub_role ?? 'staff' }
+}

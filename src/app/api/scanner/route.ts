@@ -2,6 +2,8 @@ import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/requireAuth'
 import { ScannerOcrSchema } from '@/lib/scannerSchemas'
+import { corsHeaders, handleCors } from '@/lib/cors'
+import { rateLimit, LIMITS } from '@/lib/rateLimit'
 
 function getClient() {
   return createClient(
@@ -33,11 +35,21 @@ const GEMINI_PROMPTS: Record<string, string> = {
     'Analyze this document. Extract: document_type, date, key_people (array), main_topic, key_information (array), action_required. Return ONLY valid JSON, no markdown.',
 }
 
+export async function OPTIONS(req: Request) {
+  return handleCors(req) || new Response(null, { status: 204 })
+}
+
 // ── POST /api/scanner ─────────────────────────────────────────────────────────
 
 export async function POST(request: Request) {
+  const origin = request.headers.get('origin')
+  const ip = request.headers.get('x-forwarded-for')?.split(',')[0].trim() || 'unknown'
+  const { allowed } = rateLimit(`${ip}:ocr`, LIMITS.OCR_SCANNER.max, LIMITS.OCR_SCANNER.window)
+  if (!allowed) {
+    return NextResponse.json({ error: 'Too many requests. Please wait.' }, { status: 429, headers: corsHeaders(origin) })
+  }
+
   const supabase = getClient()
-  // 1. Verify session — userId and schoolId come from the JWT, never the body
   const auth = await requireAuth()
   if (auth.unauthorized) return auth.unauthorized
 
@@ -118,5 +130,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: true, data: parsedData, inboxId: null })
   }
 
-  return NextResponse.json({ success: true, data: parsedData, inboxId: inbox.id })
+  return NextResponse.json(
+    { success: true, data: parsedData, inboxId: inbox.id },
+    { headers: corsHeaders(origin) }
+  )
 }

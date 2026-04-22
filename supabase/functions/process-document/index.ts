@@ -1,20 +1,11 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
+import { corsHeaders } from '../_shared/cors.ts'
 
-// ── CORS ──────────────────────────────────────────────────────────────────────
-// Origin is locked to the deployed app URL via ALLOWED_ORIGIN env var.
-// Falls back to localhost for local development only.
-const ALLOWED_ORIGIN = Deno.env.get('APP_URL') ?? 'http://localhost:3000'
-
-const CORS = {
-  'Access-Control-Allow-Origin':  ALLOWED_ORIGIN,
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
-
-const corsJson = (body: unknown, status = 200) =>
+const corsJson = (body: unknown, status = 200, origin: string | null = null) =>
   new Response(JSON.stringify(body), {
     status,
-    headers: { ...CORS, 'Content-Type': 'application/json' },
+    headers: { ...corsHeaders(origin), 'Content-Type': 'application/json' },
   })
 
 // ── Gemini prompts ────────────────────────────────────────────────────────────
@@ -157,17 +148,18 @@ const ALLOWED_MIME_TYPES = new Set([
 // ── Main handler ──────────────────────────────────────────────────────────────
 
 serve(async (req) => {
+  const origin = req.headers.get('origin')
+
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: CORS })
+    return new Response('ok', { headers: corsHeaders(origin) })
   }
 
   // ── 1. Verify JWT ───────────────────────────────────────────────────────────
   const authHeader = req.headers.get('Authorization')
   if (!authHeader?.startsWith('Bearer ')) {
-    return corsJson({ error: 'Unauthorized' }, 401)
+    return corsJson({ error: 'Unauthorized' }, 401, origin)
   }
 
-  // Validate the token via Supabase Auth (server-side verification, not local decode)
   const anonClient = createClient(
     Deno.env.get('SUPABASE_URL')!,
     Deno.env.get('SUPABASE_ANON_KEY')!,
@@ -176,7 +168,7 @@ serve(async (req) => {
 
   const { data: { user }, error: authError } = await anonClient.auth.getUser()
   if (authError || !user) {
-    return corsJson({ error: 'Unauthorized' }, 401)
+    return corsJson({ error: 'Unauthorized' }, 401, origin)
   }
 
   // ── 2. Derive schoolId server-side — never trust the request body ───────────
@@ -192,7 +184,7 @@ serve(async (req) => {
     .single()
 
   if (!staff?.school_id) {
-    return corsJson({ error: 'Forbidden: no staff record found' }, 403)
+    return corsJson({ error: 'Forbidden: no staff record found' }, 403, origin)
   }
 
   // ── 3. Parse and validate the request body ──────────────────────────────────
@@ -200,7 +192,7 @@ serve(async (req) => {
   try {
     body = await req.json()
   } catch {
-    return corsJson({ error: 'Invalid JSON body' }, 400)
+    return corsJson({ error: 'Invalid JSON body' }, 400, origin)
   }
 
   const { base64, mimeType, task } = body as {
@@ -210,13 +202,13 @@ serve(async (req) => {
   }
 
   if (typeof base64 !== 'string' || base64.length === 0) {
-    return corsJson({ error: 'base64 must be a non-empty string' }, 400)
+    return corsJson({ error: 'base64 must be a non-empty string' }, 400, origin)
   }
   if (base64.length > 11_000_000) {
-    return corsJson({ error: 'Image too large (max ~8 MB)' }, 413)
+    return corsJson({ error: 'Image too large (max ~8 MB)' }, 413, origin)
   }
   if (typeof task !== 'string' || !ALLOWED_TASKS.has(task)) {
-    return corsJson({ error: `Unknown task: ${task}` }, 400)
+    return corsJson({ error: `Unknown task: ${task}` }, 400, origin)
   }
   const resolvedMime = typeof mimeType === 'string' && ALLOWED_MIME_TYPES.has(mimeType)
     ? mimeType
@@ -248,12 +240,12 @@ serve(async (req) => {
   if (!geminiRes.ok) {
     const errText = await geminiRes.text()
     console.error('[process-document] Gemini error:', geminiRes.status, errText.slice(0, 200))
-    return corsJson({ error: 'OCR service unavailable' }, 502)
+    return corsJson({ error: 'OCR service unavailable' }, 502, origin)
   }
 
   const geminiData = await geminiRes.json()
-  const rawText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text ?? '{}'
-  const cleanText = rawText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
+  const rawText    = geminiData.candidates?.[0]?.content?.parts?.[0]?.text ?? '{}'
+  const cleanText  = rawText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
 
   let parsed: Record<string, unknown>
   try {
@@ -265,11 +257,11 @@ serve(async (req) => {
   // ── 5. Log the scan — using server-derived ids only ─────────────────────────
   await serviceClient.from('ocr_log').insert({
     task,
-    school_id: staff.school_id,
-    user_id:   user.id,
+    school_id:  staff.school_id,
+    user_id:    user.id,
     confidence: parsed.confidence ?? null,
-    success:   true,
+    success:    true,
   })
 
-  return corsJson({ success: true, data: parsed, confidence: parsed.confidence ?? null, task })
+  return corsJson({ success: true, data: parsed, confidence: parsed.confidence ?? null, task }, 200, origin)
 })

@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { z } from 'zod'
 import { validateTeacherToken } from '@/lib/validateTeacherToken'
+import { corsHeaders, handleCors } from '@/lib/cors'
+import { rateLimit, LIMITS } from '@/lib/rateLimit'
 
 const DisciplineSchema = z.object({
   token:       z.string().min(8),
@@ -16,7 +18,16 @@ const DisciplineSchema = z.object({
   date:        z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
 })
 
+export async function OPTIONS(req: Request) {
+  return handleCors(req) || new Response(null, { status: 204 })
+}
+
 export async function POST(request: Request) {
+  const origin = request.headers.get('origin')
+  const ip = request.headers.get('x-forwarded-for')?.split(',')[0].trim() || 'unknown'
+  const { allowed } = rateLimit(ip, LIMITS.API_GENERAL.max, LIMITS.API_GENERAL.window)
+  if (!allowed) return NextResponse.json({ error: 'Too many requests.' }, { status: 429, headers: corsHeaders(origin) })
+
   let body: unknown
   try { body = await request.json() } catch {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })

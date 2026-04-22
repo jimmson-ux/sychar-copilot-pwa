@@ -1,6 +1,8 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/requireAuth'
+import { corsHeaders, handleCors } from '@/lib/cors'
+import { rateLimit, LIMITS } from '@/lib/rateLimit'
 
 function getClient() {
   return createClient(
@@ -9,7 +11,16 @@ function getClient() {
   )
 }
 
-export async function GET() {
+export async function OPTIONS(req: Request) {
+  return handleCors(req) || new Response(null, { status: 204 })
+}
+
+export async function GET(req: Request) {
+  const origin = req.headers.get('origin')
+  const ip = req.headers.get('x-forwarded-for')?.split(',')[0].trim() || 'unknown'
+  const { allowed } = rateLimit(ip, LIMITS.API_GENERAL.max, LIMITS.API_GENERAL.window)
+  if (!allowed) return NextResponse.json({ error: 'Too many requests.' }, { status: 429, headers: corsHeaders(origin) })
+
   const supabase = getClient()
   const auth = await requireAuth()
   if (auth.unauthorized) return auth.unauthorized
