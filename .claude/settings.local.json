@@ -42,7 +42,8 @@
       "Bash(git push *)",
       "Bash(git remote *)",
       "Bash(git fetch *)",
-      "Bash(vercel *)"
+      "Bash(vercel *)",
+      "Bash(git config *)"
     ]
   }
 }
