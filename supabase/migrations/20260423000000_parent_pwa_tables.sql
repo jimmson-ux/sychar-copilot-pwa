@@ -2,8 +2,7 @@
 CREATE TABLE IF NOT EXISTS parent_messages (
   id            uuid DEFAULT gen_random_uuid() PRIMARY KEY,
   parent_id     uuid NOT NULL,
-  school_id     uuid NOT NULL
-                REFERENCES school_subscriptions(school_id) ON DELETE CASCADE,
+  school_id     uuid NOT NULL,
   student_id    uuid REFERENCES students(id) ON DELETE SET NULL,
   message_body  text NOT NULL,
   sender_type   text NOT NULL
@@ -29,7 +28,7 @@ CREATE POLICY "Parents see own messages"
   TO authenticated
   USING (
     parent_id = auth.uid()
-    OR school_id = (SELECT school_id FROM users WHERE id = auth.uid() LIMIT 1)
+    OR school_id = (SELECT school_id::uuid FROM staff_records WHERE user_id = auth.uid()::text LIMIT 1)
   );
 
 CREATE POLICY "System inserts messages"
@@ -95,7 +94,7 @@ ALTER TABLE parent_query_logs ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Staff see query logs for their school"
   ON parent_query_logs FOR SELECT
   TO authenticated
-  USING (school_id = (SELECT school_id FROM users WHERE id = auth.uid() LIMIT 1));
+  USING (school_id = (SELECT school_id::uuid FROM staff_records WHERE user_id = auth.uid()::text LIMIT 1));
 
 -- ── 4. TRIGGER — Notify parent when student scanned ───────────
 CREATE OR REPLACE FUNCTION notify_parent_on_scan()
