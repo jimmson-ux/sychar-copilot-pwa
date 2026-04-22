@@ -38,7 +38,7 @@ const nextConfig: NextConfig = {
           { key: 'X-DNS-Prefetch-Control', value: 'on' },
           {
             key: 'Permissions-Policy',
-            value: 'camera=self, microphone=self, geolocation=(), payment=()',
+            value: 'camera=self, microphone=self, geolocation=self, payment=()',
           },
           {
             key: 'Content-Security-Policy',
@@ -93,7 +93,7 @@ const nextConfig: NextConfig = {
       {
         source: '/(.*)',
         has: [{ type: 'header', key: 'x-forwarded-proto', value: 'http' }],
-        destination: 'https://nkoroi-school-management-6d13.vercel.app/:path*',
+        destination: 'https://sychar-copilot-pwa.vercel.app/:path*',
         permanent: true,
       },
     ]

@@ -194,6 +194,37 @@ async function sendHeartbeat(): Promise<void> {
   } catch { /* offline — retry on next sync */ }
 }
 
+// ── Push notifications ─────────────────────────────────────────────────────────
+
+self.addEventListener('push', (event: PushEvent) => {
+  if (!event.data) return
+  const data = event.data.json() as {
+    title?: string
+    body?: string
+    tag?: string
+    type?: string
+    url?: string
+  }
+
+  event.waitUntil(
+    self.registration.showNotification(data.title || 'Sychar School', {
+      body: data.body,
+      icon: '/icon-192.png',
+      badge: '/icon-192.png',
+      tag: data.tag || 'sychar-notification',
+      requireInteraction: data.type === 'alert',
+      data: { url: data.url || '/home' },
+    })
+  )
+})
+
+self.addEventListener('notificationclick', (event: NotificationEvent) => {
+  event.notification.close()
+  event.waitUntil(
+    self.clients.openWindow((event.notification.data as { url: string }).url || '/home')
+  )
+})
+
 // ── Type declarations for sync events ─────────────────────────────────────────
 interface SyncEvent extends Event {
   tag: string
