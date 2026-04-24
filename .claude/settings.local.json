@@ -43,7 +43,15 @@
       "Bash(git remote *)",
       "Bash(git fetch *)",
       "Bash(vercel *)",
-      "Bash(git config *)"
+      "Bash(git config *)",
+      "Bash(supabase projects *)",
+      "Bash(supabase link *)",
+      "Bash(supabase init *)",
+      "Bash(supabase migration *)",
+      "Bash(supabase functions *)",
+      "Bash(xargs grep *)",
+      "Bash(echo \"exit: $?\")",
+      "Bash(git mv *)"
     ]
   }
 }

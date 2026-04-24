@@ -1,21 +1,36 @@
--- ============================================================
--- FIX RLS POLICIES — replaces all USING (true) open policies
--- with school-scoped, role-aware policies.
---
--- Run this AFTER 20260327_full_scanner_schema.sql
--- ============================================================
-
--- ── 1. Drop the eight open policies ──────────────────────────────────────────
-
-DROP POLICY IF EXISTS "service_all_students"        ON public.students;
-DROP POLICY IF EXISTS "service_all_marks"           ON public.marks;
-DROP POLICY IF EXISTS "service_all_fee_records"     ON public.fee_records;
-DROP POLICY IF EXISTS "service_all_fee_structure"   ON public.fee_structure_items;
-DROP POLICY IF EXISTS "service_all_discipline"      ON public.discipline_records;
-DROP POLICY IF EXISTS "service_all_dept_reports"    ON public.department_reports;
-DROP POLICY IF EXISTS "service_all_ocr_log"         ON public.ocr_log;
-DROP POLICY IF EXISTS "service_all_staff"           ON public.staff_records;
-
+-- 1. Safely drop the open policies only if the tables exist
+DO $$ 
+BEGIN 
+    -- Check Students
+    IF EXISTS (SELECT 1 FROM pg_tables WHERE tablename = 'students' AND schemaname = 'public') THEN
+        DROP POLICY IF EXISTS "service_all_students" ON public.students;
+    END IF;
+    -- Check Marks
+    IF EXISTS (SELECT 1 FROM pg_tables WHERE tablename = 'marks' AND schemaname = 'public') THEN
+        DROP POLICY IF EXISTS "service_all_marks" ON public.marks;
+    END IF;
+    -- Check Fee Records
+    IF EXISTS (SELECT 1 FROM pg_tables WHERE tablename = 'fee_records' AND schemaname = 'public') THEN
+        DROP POLICY IF EXISTS "service_all_fee_records" ON public.fee_records;
+    END IF;
+    -- Check Fee Structure Items (The specific crash point)
+    IF EXISTS (SELECT 1 FROM pg_tables WHERE tablename = 'fee_structure_items' AND schemaname = 'public') THEN
+        DROP POLICY IF EXISTS "service_all_fee_structure" ON public.fee_structure_items;
+    END IF;
+    -- Check remaining tables
+    IF EXISTS (SELECT 1 FROM pg_tables WHERE tablename = 'discipline' AND schemaname = 'public') THEN
+        DROP POLICY IF EXISTS "service_all_discipline" ON public.discipline;
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_tables WHERE tablename = 'dept_reports' AND schemaname = 'public') THEN
+        DROP POLICY IF EXISTS "service_all_dept_reports" ON public.dept_reports;
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_tables WHERE tablename = 'ocr_log' AND schemaname = 'public') THEN
+        DROP POLICY IF EXISTS "service_all_ocr_log" ON public.ocr_log;
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_tables WHERE tablename = 'staff_records' AND schemaname = 'public') THEN
+        DROP POLICY IF EXISTS "service_all_staff" ON public.staff_records;
+    END IF;
+END $$;
 -- ── 2. School-ID helper (SECURITY DEFINER avoids RLS recursion) ──────────────
 --
 -- When a policy on e.g. "students" calls get_my_school_id(), that function
@@ -32,7 +47,7 @@ SET search_path = public
 AS $$
   SELECT school_id
   FROM   public.staff_records
-  WHERE  user_id = auth.uid()
+  WHERE  user_id = auth.uid()::text
   LIMIT  1;
 $$;
 
@@ -63,7 +78,7 @@ CREATE POLICY "staff_select_own_school_staff"
   TO authenticated
   USING (
     school_id = public.get_my_school_id()
-    OR user_id  = auth.uid()
+    OR user_id  = auth.uid()::text
   );
 
 -- ── 5. marks ─────────────────────────────────────────────────────────────────

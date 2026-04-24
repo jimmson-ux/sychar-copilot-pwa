@@ -30,7 +30,7 @@ ALTER TABLE parent_query_logs ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Staff see parent queries for their school"
   ON parent_query_logs FOR SELECT
   TO authenticated
-  USING (school_id = (SELECT school_id FROM staff_records WHERE user_id = auth.uid() LIMIT 1));
+  USING (school_id = (SELECT school_id FROM staff_records WHERE user_id = auth.uid()::text LIMIT 1));
 
 -- ── 3. Add NOT NULL to school_id where missing ───────────────
 DO $$

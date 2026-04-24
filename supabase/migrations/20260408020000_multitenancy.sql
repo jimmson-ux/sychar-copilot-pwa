@@ -65,7 +65,7 @@ SET search_path = public
 AS $$
   SELECT school_id
   FROM   public.staff_records
-  WHERE  user_id = auth.uid()          -- primary lookup (UUID column)
+  WHERE  user_id = auth.uid()::text    -- TEXT column; ::text cast required
   LIMIT  1;
 $$;
 

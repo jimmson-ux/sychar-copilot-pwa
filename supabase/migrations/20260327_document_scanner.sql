@@ -33,5 +33,7 @@ ALTER TABLE public.document_inbox    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.apology_letters   ENABLE ROW LEVEL SECURITY;
 
 -- Allow service role full access
+DROP POLICY IF EXISTS "service_role_all_document_inbox"  ON public.document_inbox;
+DROP POLICY IF EXISTS "service_role_all_apology_letters" ON public.apology_letters;
 CREATE POLICY "service_role_all_document_inbox"   ON public.document_inbox    FOR ALL USING (true);
 CREATE POLICY "service_role_all_apology_letters"  ON public.apology_letters   FOR ALL USING (true);

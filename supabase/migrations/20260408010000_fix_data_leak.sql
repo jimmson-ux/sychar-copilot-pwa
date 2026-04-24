@@ -90,7 +90,7 @@ CREATE POLICY "gerald_flagged_only" ON public.welfare_logs
       JOIN   public.principal_flags pf
              ON  pf.student_id  = welfare_logs.student_id
              AND pf.school_id   = welfare_logs.school_id   -- school scope
-      WHERE  sr.user_id   = auth.uid()
+      WHERE  sr.user_id   = auth.uid()::text
         AND  sr.sub_role  = 'deputy_principal_discipline'
         AND  sr.school_id = welfare_logs.school_id          -- school scope
         AND  pf.status   != 'open'
@@ -108,7 +108,7 @@ CREATE POLICY "flags_principal_counsellor" ON public.principal_flags
   FOR ALL USING (
     EXISTS (
       SELECT 1 FROM public.staff_records
-      WHERE  user_id   = auth.uid()                          -- UUID = UUID
+      WHERE  user_id   = auth.uid()::text                    -- TEXT = TEXT
         AND  sub_role IN ('principal', 'guidance_counselling')
         AND  school_id = principal_flags.school_id
     )
@@ -120,7 +120,7 @@ CREATE POLICY "principal_welfare_access" ON public.welfare_logs
   FOR SELECT USING (
     EXISTS (
       SELECT 1 FROM public.staff_records
-      WHERE  user_id   = auth.uid()
+      WHERE  user_id   = auth.uid()::text
         AND  sub_role  = 'principal'
         AND  school_id = welfare_logs.school_id
     )
