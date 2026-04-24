@@ -1,6 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-const NKOROI_SCHOOL_ID = '68bd8d34-f2f0-4297-bd18-093328824d84'
+// school_id resolved dynamically from session — no hardcoded IDs
 
 // Used by existing edge functions (queries staff_records)
 export async function verifyRequest(req: Request): Promise<{
@@ -29,8 +29,7 @@ export async function verifyRequest(req: Request): Promise<{
     .eq('user_id', user.id)
     .single()
 
-  if (!staff) return null
-  if (staff.school_id !== NKOROI_SCHOOL_ID) return null
+  if (!staff?.school_id) return null
 
   return { userId: user.id, schoolId: staff.school_id, role: staff.sub_role ?? 'staff' }
 }
@@ -59,9 +58,7 @@ export async function verifyToken(req: Request): Promise<{
     .eq('id', user.id)
     .single()
 
-  if (!data) return null
-
-  if (data.school_id !== NKOROI_SCHOOL_ID && data.role !== 'super_admin') return null
+  if (!data?.school_id) return null
 
   return { userId: user.id, schoolId: data.school_id, role: data.role }
 }

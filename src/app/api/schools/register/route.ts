@@ -6,7 +6,6 @@ import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 
 export async function POST(req: NextRequest) {
-  // Simple shared-secret guard — set SCHOOL_REGISTRATION_SECRET in Vercel env vars
   const authHeader = req.headers.get('authorization') ?? ''
   const secret = process.env.SCHOOL_REGISTRATION_SECRET
   if (!secret || authHeader !== `Bearer ${secret}`) {
@@ -32,7 +31,8 @@ export async function POST(req: NextRequest) {
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   )
 
-  const { data, error } = await serviceClient.rpc('register_school', {
+  // Register the school — RPC returns school_id
+  const { data: schoolId, error } = await serviceClient.rpc('register_school', {
     p_school_name:   school_name,
     p_county:        county ?? null,
     p_admin_user_id: admin_user_id,
@@ -46,5 +46,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  return NextResponse.json({ school_id: data }, { status: 201 })
+  // Fetch the auto-generated short code for the welcome email
+  // school_id resolved dynamically from session
+  const { data: tenant } = await serviceClient
+    .from('tenant_configs')
+    .select('school_short_code')
+    .eq('school_id', schoolId)
+    .single()
+
+  return NextResponse.json(
+    {
+      school_id:         schoolId,
+      school_short_code: tenant?.school_short_code ?? null,
+    },
+    { status: 201 }
+  )
 }

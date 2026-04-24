@@ -4,7 +4,7 @@ import { corsHeaders, handleOptions } from '../_shared/cors.ts'
 import { verifyToken } from '../_shared/auth.ts'
 import * as jose from 'https://deno.land/x/jose@v4.15.4/index.ts'
 
-const NKOROI_SCHOOL_ID = '68bd8d34-f2f0-4297-bd18-093328824d84'
+// school_id resolved dynamically from session
 
 serve(async (req: Request) => {
   const preflight = handleOptions(req)
@@ -33,7 +33,7 @@ serve(async (req: Request) => {
     const secret = new TextEncoder().encode(Deno.env.get('SYCHAR_QR_SECRET'))
 
     const payload = {
-      school_id: NKOROI_SCHOOL_ID,
+      school_id: auth.schoolId,  // school_id resolved dynamically from session
       class_id: classId,
       class_name: className,
       stream_name: streamName,
@@ -55,7 +55,7 @@ serve(async (req: Request) => {
     const qrUrl = `${APP_URL}/record?token=${jwt}`
 
     await supabase.from('classroom_qr_codes').upsert([{
-      school_id: NKOROI_SCHOOL_ID,
+      school_id: auth.schoolId,
       class_id: classId,
       class_name: className,
       stream_name: streamName,

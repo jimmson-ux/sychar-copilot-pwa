@@ -37,13 +37,10 @@ export function requireRole(auth: AuthContext, allowedSubRoles: string[]): NextR
 }
 
 // School guard — prevents cross-school data access
+// school_id resolved dynamically from session
 export function requireSchool(auth: AuthContext, requestedSchoolId: string): NextResponse | null {
-  const NKOROI_ID = '68bd8d34-f2f0-4297-bd18-093328824d84'
   if (auth.schoolId !== requestedSchoolId) {
     return NextResponse.json({ error: 'Forbidden — wrong school' }, { status: 403 })
-  }
-  if (requestedSchoolId !== NKOROI_ID) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
   return null
 }

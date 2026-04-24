@@ -3,7 +3,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { handleOptions } from '../_shared/cors.ts'
 import { createHmac } from 'https://deno.land/std@0.177.0/node/crypto.ts'
 
-const NKOROI_SCHOOL_ID = '68bd8d34-f2f0-4297-bd18-093328824d84'
+// school_id resolved dynamically from staff_records phone lookup
 
 serve(async (req: Request) => {
   const preflight = handleOptions(req)
@@ -51,11 +51,13 @@ async function processClockIn(phone: string, text: string): Promise<Response> {
     .replace(/^254/, '+254')
     .replace(/^0/, '+254')
 
+  // school_id resolved dynamically from the staff record matching this phone
   const { data: staff } = await supabase
     .from('staff_records')
     .select('id, full_name, school_id, is_active')
     .eq('phone', normalizedPhone)
-    .eq('school_id', NKOROI_SCHOOL_ID)
+    .eq('is_active', true)
+    .limit(1)
     .single()
 
   if (!staff || !staff.is_active) {

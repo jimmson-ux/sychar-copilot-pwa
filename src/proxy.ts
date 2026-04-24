@@ -20,26 +20,61 @@ const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? ''
 const PROJECT_REF  = SUPABASE_URL.replace('https://', '').split('.')[0]
 const AUTH_COOKIE  = `sb-${PROJECT_REF}-auth-token`
 
-const ROLE_COOKIE  = 'sychar-role'   // sub_role from staff_records
-const SUB_COOKIE   = 'sychar-sub'    // school subscription status
+const ROLE_COOKIE = 'sychar-role'  // sub_role from staff_records
+const SUB_COOKIE  = 'sychar-sub'   // school subscription status
+
+const PUBLIC_ROUTES = [
+  '/login', '/auth', '/quick-report', '/super/login',
+  '/talk', '/loc-verify', '/suspended', '/offline', '/record',
+]
+
+// Shared utility pages any authenticated staff member may access
+const SHARED_DASHBOARD_PREFIXES = [
+  '/dashboard/students',
+  '/dashboard/settings',
+  '/dashboard/scanner',
+  '/dashboard/notices',
+]
+
+// school_id resolved dynamically from session
+const ROLE_ROUTES: Record<string, string> = {
+  'principal':                   '/dashboard/principal',
+  'deputy_principal_academic':   '/dashboard/deputy-academic',
+  'deputy_principal_academics':  '/dashboard/deputy-academic',
+  'deputy_principal_admin':      '/dashboard/deputy-admin',
+  'deputy_principal_discipline': '/dashboard/deputy-admin',
+  'dean_of_studies':             '/dashboard/dean',
+  'deputy_dean_of_studies':      '/dashboard/dean',
+  'dean_of_students':            '/dashboard/dean',
+  'hod_sciences':                '/dashboard/hod',
+  'hod_arts':                    '/dashboard/hod',
+  'hod_languages':               '/dashboard/hod',
+  'hod_mathematics':             '/dashboard/hod',
+  'hod_social_sciences':         '/dashboard/hod',
+  'hod_technical':               '/dashboard/hod',
+  'hod_pathways':                '/dashboard/hod',
+  'bursar':                      '/dashboard/bursar',
+  'accountant':                  '/dashboard/bursar',
+  'storekeeper':                 '/dashboard/storekeeper',
+  'school_nurse':                '/dashboard/nurse',
+  'class_teacher':               '/dashboard/teacher',
+  'subject_teacher':             '/dashboard/teacher',
+  'bom_teacher':                 '/dashboard/teacher',
+  'counselor':                   '/dashboard/counselor',
+  'librarian':                   '/dashboard/librarian',
+  'quality_assurance':           '/dashboard/teacher',
+  'super_admin':                 '/super/dashboard',
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/** Paths that never require a session */
 function isPublicPath(pathname: string): boolean {
-  return (
-    pathname === '/login'               ||
-    pathname === '/super/login'         ||
-    pathname === '/suspended'           ||
-    pathname.startsWith('/auth/')       ||
-    pathname.startsWith('/record')      ||     // teacher QR submission page
-    pathname.startsWith('/quick-report')||
-    pathname.startsWith('/talk')        ||     // public voice/chat interface
-    pathname === '/api/auth/staff-list'        // public staff list for login UI
-  )
+  if (PUBLIC_ROUTES.some(r => pathname === r || pathname.startsWith(r + '/'))) return true
+  if (pathname === '/api/auth/staff-list') return true
+  if (pathname.startsWith('/api/gc/self-referral')) return true
+  return false
 }
 
-/** Returns true when a valid Supabase session cookie is present */
 function hasSession(req: NextRequest): boolean {
   try {
     if (req.cookies.get(AUTH_COOKIE)?.value)        return true
@@ -48,38 +83,15 @@ function hasSession(req: NextRequest): boolean {
       c => c.name.includes(PROJECT_REF) && c.name.includes('auth-token') && !!c.value
     )
   } catch {
-    return true  // be permissive on parse error; dashboard re-validates
+    return true  // permissive on parse error; dashboard re-validates via requireAuth()
   }
 }
 
-/**
- * Map sub_role → canonical dashboard path.
- * Pages at these paths exist (or are thin wrappers around shared components).
- */
 function dashboardFor(subRole: string): string {
-  if (subRole === 'super_admin')                           return '/super/dashboard'
-  if (subRole === 'principal')                             return '/dashboard/principal'
-  // Differentiate the two deputy variants
-  if (subRole === 'deputy_principal_academic'  ||
-      subRole === 'deputy_principal_academics')            return '/dashboard/deputy-academic'
-  if (subRole === 'deputy_principal_admin'     ||
-      subRole === 'deputy_principal_discipline')           return '/dashboard/deputy-admin'
-  if (subRole.startsWith('deputy_principal'))              return '/dashboard/deputy'  // fallback
-  if (
-    subRole === 'dean_of_studies'        ||
-    subRole === 'deputy_dean_of_studies' ||
-    subRole === 'dean_of_students'
-  )                                                        return '/dashboard/dean'
-  if (subRole.startsWith('hod_'))                         return '/dashboard/hod'
-  if (subRole === 'bursar' || subRole === 'accountant')   return '/dashboard/bursar'
-  if (subRole === 'storekeeper')                          return '/dashboard/storekeeper'
-  if (subRole === 'school_nurse')                         return '/dashboard/nurse'
-  if (
-    subRole === 'class_teacher'  ||
-    subRole === 'bom_teacher'    ||
-    subRole === 'subject_teacher'
-  )                                                        return '/dashboard/teacher'
-  return '/dashboard'
+  if (subRole === 'super_admin') return '/super/dashboard'
+  if (subRole.startsWith('hod_')) return '/dashboard/hod'
+  if (subRole.startsWith('deputy_principal')) return '/dashboard/deputy-admin'
+  return ROLE_ROUTES[subRole] ?? '/dashboard/teacher'
 }
 
 // ── Proxy ─────────────────────────────────────────────────────────────────────
@@ -110,6 +122,11 @@ export function proxy(request: NextRequest) {
       return NextResponse.next()
     }
 
+    // ── API routes — auth handled by requireAuth() in each handler ─
+    if (pathname.startsWith('/api/')) {
+      return NextResponse.next()
+    }
+
     // ── Unauthenticated → /login ──────────────────────────────
     if (!loggedIn) {
       const url = new URL('/login', request.url)
@@ -117,26 +134,37 @@ export function proxy(request: NextRequest) {
       return NextResponse.redirect(url)
     }
 
-    // ── Frozen / suspended school → /suspended ───────────────
+    // ── Frozen / suspended → /suspended ──────────────────────
     if (subStatus === 'suspended' || subStatus === 'frozen') {
+      // Principal can reach their dashboard to see payment/reinstatement options
+      if (subRole === 'principal' && pathname.startsWith('/dashboard/principal')) {
+        return NextResponse.next()
+      }
       return NextResponse.redirect(new URL('/suspended', request.url))
     }
 
     // ── /super/* — super_admin only ───────────────────────────
     if (pathname.startsWith('/super/')) {
       if (subRole !== 'super_admin') {
-        const target = subRole ? dashboardFor(subRole) : '/dashboard'
-        return NextResponse.redirect(new URL(target, request.url))
+        return NextResponse.redirect(new URL(subRole ? dashboardFor(subRole) : '/login', request.url))
       }
       return NextResponse.next()
     }
 
-    // ── /dashboard (root exact) — role-based entry redirect ───
-    // Only redirect the root path so sub-paths always render their own content.
-    if (pathname === '/dashboard' && subRole) {
-      const target = dashboardFor(subRole)
-      if (target !== '/dashboard') {
-        return NextResponse.redirect(new URL(target, request.url))
+    // ── /dashboard root → role-based entry redirect ───────────
+    if (pathname === '/dashboard' || pathname === '/dashboard/') {
+      return NextResponse.redirect(new URL(subRole ? dashboardFor(subRole) : '/login', request.url))
+    }
+
+    // ── /dashboard/* — prevent accessing another role's dashboard ─
+    if (pathname.startsWith('/dashboard/') && subRole) {
+      const correctDashboard = dashboardFor(subRole)
+      const isOwn    = pathname.startsWith(correctDashboard)
+      const isHod    = correctDashboard === '/dashboard/hod' && pathname.startsWith('/dashboard/hod')
+      const isShared = SHARED_DASHBOARD_PREFIXES.some(p => pathname.startsWith(p))
+
+      if (!isOwn && !isHod && !isShared) {
+        return NextResponse.redirect(new URL(correctDashboard, request.url))
       }
     }
 
@@ -154,7 +182,6 @@ export function proxy(request: NextRequest) {
 
 export const proxyConfig = {
   matcher: [
-    // All routes except Next.js static internals
     '/((?!_next/static|_next/image|favicon\\.ico).*)',
   ],
 }
