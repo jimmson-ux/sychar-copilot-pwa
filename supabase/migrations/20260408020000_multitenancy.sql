@@ -32,12 +32,25 @@ CREATE TABLE IF NOT EXISTS public.schools (
 ALTER TABLE public.schools ENABLE ROW LEVEL SECURITY;
 
 -- Staff can read their own school's details only.
+DROP POLICY IF EXISTS "schools_select_own" ON public.schools;
 CREATE POLICY "schools_select_own"
   ON public.schools FOR SELECT TO authenticated
   USING (id = public.get_my_school_id());
 
 -- Only service_role (admin API) may INSERT / UPDATE schools.
 -- No authenticated browser policy → default DENY for write.
+
+-- Add extended columns that 001_core_tables.sql did not include
+ALTER TABLE public.schools ADD COLUMN IF NOT EXISTS short_name   text;
+ALTER TABLE public.schools ADD COLUMN IF NOT EXISTS subdomain    text UNIQUE;
+ALTER TABLE public.schools ADD COLUMN IF NOT EXISTS country      text DEFAULT 'Kenya';
+ALTER TABLE public.schools ADD COLUMN IF NOT EXISTS address      text;
+ALTER TABLE public.schools ADD COLUMN IF NOT EXISTS phone        text;
+ALTER TABLE public.schools ADD COLUMN IF NOT EXISTS email        text;
+ALTER TABLE public.schools ADD COLUMN IF NOT EXISTS logo_url     text;
+ALTER TABLE public.schools ADD COLUMN IF NOT EXISTS tier         text DEFAULT 'basic';
+ALTER TABLE public.schools ADD COLUMN IF NOT EXISTS max_staff    integer DEFAULT 100;
+ALTER TABLE public.schools ADD COLUMN IF NOT EXISTS onboarded_at timestamptz;
 
 -- Seed the existing school so existing staff_records still resolve.
 INSERT INTO public.schools (id, name, short_name, county, onboarded_at)

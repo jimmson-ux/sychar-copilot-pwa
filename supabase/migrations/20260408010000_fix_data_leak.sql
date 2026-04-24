@@ -16,10 +16,12 @@
 DROP POLICY IF EXISTS "service_role_all_document_inbox"  ON public.document_inbox;
 DROP POLICY IF EXISTS "service_role_all_apology_letters" ON public.apology_letters;
 
+DROP POLICY IF EXISTS "document_inbox_select_own_school" ON public.document_inbox;
 CREATE POLICY "document_inbox_select_own_school"
   ON public.document_inbox FOR SELECT TO authenticated
   USING (school_id = public.get_my_school_id());
 
+DROP POLICY IF EXISTS "apology_letters_select_own_school" ON public.apology_letters;
 CREATE POLICY "apology_letters_select_own_school"
   ON public.apology_letters FOR SELECT TO authenticated
   USING (school_id = public.get_my_school_id());
@@ -29,11 +31,17 @@ CREATE POLICY "apology_letters_select_own_school"
 ALTER TABLE public.apology_letters
   ADD COLUMN IF NOT EXISTS school_id uuid;
 
-UPDATE public.apology_letters al
-SET    school_id = di.school_id
-FROM   public.document_inbox di
-WHERE  al.document_inbox_id = di.id
-  AND  al.school_id IS NULL;
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_name = 'apology_letters' AND column_name = 'document_inbox_id') THEN
+    UPDATE public.apology_letters al
+    SET    school_id = di.school_id
+    FROM   public.document_inbox di
+    WHERE  al.document_inbox_id = di.id
+      AND  al.school_id IS NULL;
+  END IF;
+END $$;
 
 -- Drop the just-created policy and recreate now that the column exists
 DROP POLICY IF EXISTS "apology_letters_select_own_school" ON public.apology_letters;

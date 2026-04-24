@@ -23,6 +23,7 @@ CREATE INDEX IF NOT EXISTS idx_parent_messages_unread
 
 ALTER TABLE parent_messages ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Parents see own messages" ON parent_messages;
 CREATE POLICY "Parents see own messages"
   ON parent_messages FOR SELECT
   TO authenticated
@@ -31,12 +32,21 @@ CREATE POLICY "Parents see own messages"
     OR school_id = (SELECT school_id::uuid FROM staff_records WHERE user_id = auth.uid()::text LIMIT 1)
   );
 
+DROP POLICY IF EXISTS "System inserts messages" ON parent_messages;
 CREATE POLICY "System inserts messages"
   ON parent_messages FOR INSERT
   TO authenticated
   WITH CHECK (school_id = '68bd8d34-f2f0-4297-bd18-093328824d84'::uuid);
 
-ALTER PUBLICATION supabase_realtime ADD TABLE parent_messages;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND tablename = 'parent_messages'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE parent_messages;
+  END IF;
+END $$;
 
 -- ── 2. pending_clock_ins (SMS+GPS verification) ───────────────
 CREATE TABLE IF NOT EXISTS pending_clock_ins (
@@ -91,6 +101,7 @@ CREATE INDEX IF NOT EXISTS idx_parent_query_logs_student
 
 ALTER TABLE parent_query_logs ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Staff see query logs for their school" ON parent_query_logs;
 CREATE POLICY "Staff see query logs for their school"
   ON parent_query_logs FOR SELECT
   TO authenticated
