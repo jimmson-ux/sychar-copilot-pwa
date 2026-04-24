@@ -123,6 +123,25 @@ export default function PrincipalDashboard() {
   const [error, setError]     = useState('')
   const [name, setName]       = useState('')
 
+  // AI Command Center state
+  const [aiSummary, setAiSummary]             = useState('')
+  const [aiSummaryLoading, setAiSummaryLoading] = useState(false)
+  const [aiSummaryErr, setAiSummaryErr]       = useState('')
+
+  async function generateAiSummary() {
+    setAiSummaryLoading(true); setAiSummaryErr(''); setAiSummary('')
+    try {
+      const res = await fetch('/api/ai/principal-summary', { method: 'POST' })
+      const d = await res.json() as { ok?: boolean; summary?: string; error?: string }
+      if (d.ok && d.summary) setAiSummary(d.summary)
+      else setAiSummaryErr(d.error ?? 'Failed to generate summary')
+    } catch {
+      setAiSummaryErr('Network error — try again')
+    } finally {
+      setAiSummaryLoading(false)
+    }
+  }
+
   // Emergency broadcast state
   const [showEmergency, setShowEmergency]       = useState(false)
   const [broadcastType, setBroadcastType]       = useState('school_closure')
@@ -428,8 +447,48 @@ export default function PrincipalDashboard() {
             </Panel>
           </div>
 
+          {/* AI Command Center */}
+          <div className="principal-panel" style={{ animationDelay: '0.2s', gridColumn: '1 / -1' }}>
+            <Panel
+              title="AI Command Center"
+              icon="🧠"
+              action={
+                <button
+                  onClick={generateAiSummary}
+                  disabled={aiSummaryLoading}
+                  style={{ padding: '6px 14px', background: aiSummaryLoading ? '#93c5fd' : 'linear-gradient(135deg,#1e40af,#7c3aed)', color: 'white', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: aiSummaryLoading ? 'not-allowed' : 'pointer' }}
+                >
+                  {aiSummaryLoading ? 'Generating…' : '⚡ Generate Daily Brief'}
+                </button>
+              }
+            >
+              {!aiSummary && !aiSummaryLoading && !aiSummaryErr && (
+                <div style={{ textAlign: 'center', padding: '24px 0', color: '#9ca3af', fontSize: 13 }}>
+                  Click &quot;Generate Daily Brief&quot; for an AI-powered school status summary
+                </div>
+              )}
+              {aiSummaryLoading && (
+                <div style={{ padding: '20px 0', color: '#6b7280', fontSize: 13, textAlign: 'center' }}>
+                  Analysing school data…
+                </div>
+              )}
+              {aiSummaryErr && (
+                <div style={{ padding: '12px', background: '#fef2f2', borderRadius: 10, color: '#dc2626', fontSize: 13 }}>
+                  {aiSummaryErr}
+                </div>
+              )}
+              {aiSummary && (
+                <div style={{ padding: '16px', background: '#f0f9ff', borderRadius: 12, border: '1px solid #bae6fd' }}>
+                  <p style={{ fontSize: 13, lineHeight: 1.7, color: '#0c4a6e', whiteSpace: 'pre-wrap', margin: 0 }}>
+                    {aiSummary}
+                  </p>
+                </div>
+              )}
+            </Panel>
+          </div>
+
           {/* Quick actions */}
-          <div className="principal-panel" style={{ animationDelay: '0.2s' }}>
+          <div className="principal-panel" style={{ animationDelay: '0.23s' }}>
             <Panel title="Quick Actions" icon="⚡">
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                 {([

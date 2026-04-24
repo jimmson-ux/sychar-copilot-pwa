@@ -46,6 +46,15 @@ interface Alert {
   created_at: string
 }
 
+interface VoteHead {
+  id: string
+  code: string
+  name: string
+  category: string
+  allocated_amount: number
+  spent_amount: number
+}
+
 interface Overview {
   term: string
   academic_year: string
@@ -60,7 +69,7 @@ interface Overview {
   alerts: Alert[]
 }
 
-type Tab = 'summary' | 'payments' | 'defaulters' | 'mpesa' | 'alerts'
+type Tab = 'summary' | 'payments' | 'defaulters' | 'mpesa' | 'fdse' | 'alerts'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -93,6 +102,25 @@ export default function BursarDashboard() {
   const [searching, setSearching] = useState(false)
   const [term, setTerm]         = useState('')
   const [year, setYear]         = useState('')
+
+  // FDSE state
+  const [fdseAmount, setFdseAmount]   = useState('')
+  const [fdseMethod, setFdseMethod]   = useState('bank_transfer')
+  const [fdseRef, setFdseRef]         = useState('')
+  const [fdseDate, setFdseDate]       = useState(new Date().toISOString().split('T')[0])
+  const [fdseLoading, setFdseLoading] = useState(false)
+  const [fdseMsg, setFdseMsg]         = useState<{ ok: boolean; text: string } | null>(null)
+  const [voteHeads, setVoteHeads]     = useState<VoteHead[]>([])
+
+  // STK Push modal state
+  const [showStk, setShowStk]         = useState(false)
+  const [stkStudent, setStkStudent]   = useState<{ id: string; full_name: string; admission_number: string | null } | null>(null)
+  const [stkSearch, setStkSearch]     = useState('')
+  const [stkStudents, setStkStudents] = useState<{ id: string; full_name: string; admission_number: string | null; fee_balance: number | null }[]>([])
+  const [stkAmount, setStkAmount]     = useState('')
+  const [stkPhone, setStkPhone]       = useState('')
+  const [stkBusy, setStkBusy]         = useState(false)
+  const [stkMsg, setStkMsg]           = useState<{ ok: boolean; text: string } | null>(null)
 
   const load = useCallback(async (q = '') => {
     setLoading(true)
@@ -152,9 +180,77 @@ export default function BursarDashboard() {
     csvDownload(rows, `defaulters-term${data.term}-${data.academic_year}.csv`)
   }
 
+  async function loadVoteHeads() {
+    const res = await fetch('/api/vote-heads')
+    if (res.ok) { const d = await res.json(); setVoteHeads(d.vote_heads ?? []) }
+  }
+
+  async function submitFdse(e: React.FormEvent) {
+    e.preventDefault()
+    if (!fdseAmount || !fdseRef || !fdseDate) {
+      setFdseMsg({ ok: false, text: 'Amount, reference, and date are required.' })
+      return
+    }
+    setFdseLoading(true); setFdseMsg(null)
+    const res = await fetch('/api/fees/fdse-entry', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        amount: Number(fdseAmount),
+        payment_method: fdseMethod,
+        reference: fdseRef,
+        date: fdseDate,
+      }),
+    })
+    const d = await res.json() as { ok?: boolean; received?: number; splits?: { code: string; name: string; amount: number }[]; vote_heads?: VoteHead[]; error?: string }
+    setFdseLoading(false)
+    if (d.ok) {
+      setVoteHeads(d.vote_heads ?? [])
+      setFdseMsg({ ok: true, text: `FDSE receipt of ${fmt(d.received ?? 0)} recorded and split across ${d.splits?.length ?? 0} vote heads.` })
+      setFdseAmount(''); setFdseRef('')
+    } else {
+      setFdseMsg({ ok: false, text: d.error ?? 'Failed to record FDSE entry' })
+    }
+  }
+
+  useEffect(() => {
+    if (tab === 'fdse') loadVoteHeads()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab])
+
+  async function searchStkStudents(q: string) {
+    if (q.length < 2) { setStkStudents([]); return }
+    const res = await fetch(`/api/students/search?q=${encodeURIComponent(q)}&limit=8`)
+    if (res.ok) {
+      const d = await res.json() as { students?: { id: string; full_name: string; admission_number: string | null; fee_balance?: number | null }[] }
+      setStkStudents((d.students ?? []).map(s => ({ ...s, fee_balance: s.fee_balance ?? null })))
+    }
+  }
+
+  async function submitStkPush() {
+    if (!stkStudent || !stkAmount || !stkPhone) {
+      setStkMsg({ ok: false, text: 'Select student, enter amount and phone number.' })
+      return
+    }
+    setStkBusy(true); setStkMsg(null)
+    const res = await fetch('/api/fees/stk-push', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ studentId: stkStudent.id, amount: Number(stkAmount), phone: stkPhone }),
+    })
+    const d = await res.json() as { ok?: boolean; checkoutRequestId?: string; error?: string }
+    setStkBusy(false)
+    if (d.ok) {
+      setStkMsg({ ok: true, text: `STK Push sent to ${stkPhone}. Checkout ID: ${d.checkoutRequestId ?? '—'}` })
+    } else {
+      setStkMsg({ ok: false, text: d.error ?? 'STK Push failed' })
+    }
+  }
+
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
+    <>
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <div className="bg-white border-b px-6 py-4 flex items-center justify-between">
@@ -207,12 +303,12 @@ export default function BursarDashboard() {
 
       {/* Tabs */}
       <div className="bg-white border-b px-6">
-        <nav className="flex gap-0 -mb-px">
-          {(['summary', 'payments', 'defaulters', 'mpesa', 'alerts'] as Tab[]).map(t => (
+        <nav className="flex gap-0 -mb-px overflow-x-auto">
+          {(['summary', 'payments', 'defaulters', 'mpesa', 'fdse', 'alerts'] as Tab[]).map(t => (
             <button
               key={t}
               onClick={() => setTab(t)}
-              className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+              className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
                 tab === t
                   ? 'border-blue-600 text-blue-600'
                   : 'border-transparent text-gray-500 hover:text-gray-700'
@@ -221,7 +317,8 @@ export default function BursarDashboard() {
               {t === 'summary'    ? 'Summary'        :
                t === 'payments'   ? 'Fee Payments'   :
                t === 'defaulters' ? 'Defaulters'     :
-               t === 'mpesa'      ? 'M-Pesa Log'     : 'Alerts'}
+               t === 'mpesa'      ? 'M-Pesa Log'     :
+               t === 'fdse'       ? 'FDSE Entry'     : 'Alerts'}
               {t === 'alerts' && data && data.alerts.length > 0 && (
                 <span className="ml-1.5 bg-amber-100 text-amber-700 rounded-full px-1.5 py-0.5 text-xs">
                   {data.alerts.length}
@@ -230,6 +327,16 @@ export default function BursarDashboard() {
             </button>
           ))}
         </nav>
+      </div>
+
+      {/* STK Push Button (floating) */}
+      <div className="fixed bottom-6 right-6 z-40">
+        <button
+          onClick={() => { setShowStk(true); setStkMsg(null) }}
+          className="flex items-center gap-2 px-5 py-3 bg-green-600 text-white rounded-full shadow-lg hover:bg-green-700 font-semibold text-sm"
+        >
+          📱 STK Push
+        </button>
       </div>
 
       {/* Body */}
@@ -520,6 +627,100 @@ export default function BursarDashboard() {
           </div>
         )}
 
+        {/* ── FDSE ENTRY TAB ──────────────────────────────────────────────── */}
+        {tab === 'fdse' && (
+          <div className="space-y-6 max-w-2xl">
+            <div className="bg-white rounded-xl border p-6">
+              <h2 className="font-semibold text-gray-800 mb-1">Record FDSE Receipt</h2>
+              <p className="text-sm text-gray-500 mb-5">
+                Auto-splits across RMI (49.42%), Tuition (25.33%), KICD (19.21%), Activity (6.03%)
+              </p>
+              <form onSubmit={submitFdse} className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1">Amount (KSH) *</label>
+                    <input
+                      type="number" min="1" step="0.01"
+                      value={fdseAmount} onChange={e => setFdseAmount(e.target.value)}
+                      className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="e.g. 500000"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1">Payment Method *</label>
+                    <select
+                      value={fdseMethod} onChange={e => setFdseMethod(e.target.value)}
+                      className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="bank_transfer">Bank Transfer</option>
+                      <option value="cheque">Cheque</option>
+                      <option value="rtgs">RTGS</option>
+                      <option value="cash">Cash</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1">Reference / Receipt # *</label>
+                    <input
+                      value={fdseRef} onChange={e => setFdseRef(e.target.value)}
+                      className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="MOE-2026-XXXXXX"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1">Date Received *</label>
+                    <input
+                      type="date" value={fdseDate} onChange={e => setFdseDate(e.target.value)}
+                      className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+
+                {fdseMsg && (
+                  <div className={`rounded-lg px-4 py-3 text-sm font-medium ${fdseMsg.ok ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+                    {fdseMsg.text}
+                  </div>
+                )}
+
+                <button
+                  type="submit" disabled={fdseLoading}
+                  className="w-full py-3 bg-blue-600 text-white rounded-lg font-semibold text-sm hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {fdseLoading ? 'Recording…' : 'Record FDSE Receipt & Split'}
+                </button>
+              </form>
+            </div>
+
+            {/* Vote Head Balances */}
+            {voteHeads.length > 0 && (
+              <div className="bg-white rounded-xl border p-6">
+                <h3 className="font-semibold text-gray-800 mb-4">Current Vote Head Balances</h3>
+                <div className="space-y-3">
+                  {voteHeads.map(vh => {
+                    const utilPct = vh.allocated_amount > 0
+                      ? Math.round((vh.spent_amount / vh.allocated_amount) * 100)
+                      : 0
+                    return (
+                      <div key={vh.id}>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-sm font-medium text-gray-700">{vh.name} <span className="text-xs text-gray-400">({vh.code})</span></span>
+                          <span className="text-sm text-gray-600">{fmt(vh.spent_amount)} / {fmt(vh.allocated_amount)}</span>
+                        </div>
+                        <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                          <div
+                            className={`h-2 rounded-full ${utilPct >= 90 ? 'bg-red-500' : utilPct >= 70 ? 'bg-amber-500' : 'bg-blue-500'}`}
+                            style={{ width: `${Math.min(100, utilPct)}%` }}
+                          />
+                        </div>
+                        <p className="text-xs text-gray-400 mt-0.5 text-right">{utilPct}% utilised</p>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* ── ALERTS TAB ──────────────────────────────────────────────────── */}
         {!loading && data && tab === 'alerts' && (
           <div className="space-y-4">
@@ -562,5 +763,107 @@ export default function BursarDashboard() {
         )}
       </div>
     </div>
+
+    {/* ── STK Push Modal ──────────────────────────────────────────────────── */}
+    {showStk && (
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+        onClick={e => { if (e.target === e.currentTarget) { setShowStk(false); setStkMsg(null) } }}
+      >
+        <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl overflow-hidden">
+          <div className="bg-green-600 px-6 py-4 flex items-center justify-between">
+            <div>
+              <p className="text-white font-bold text-lg">📱 M-Pesa STK Push</p>
+              <p className="text-green-100 text-xs mt-0.5">Send fee payment request to parent&apos;s phone</p>
+            </div>
+            <button
+              onClick={() => { setShowStk(false); setStkMsg(null) }}
+              className="w-8 h-8 flex items-center justify-center rounded-lg bg-white/20 text-white text-xl hover:bg-white/30"
+            >
+              ×
+            </button>
+          </div>
+
+          <div className="p-6 space-y-4">
+            {/* Student search */}
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1">Search Student</label>
+              <input
+                value={stkSearch}
+                onChange={e => { setStkSearch(e.target.value); setStkStudent(null); searchStkStudents(e.target.value) }}
+                placeholder="Name or admission number…"
+                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+              />
+              {stkStudents.length > 0 && !stkStudent && (
+                <div className="mt-1 border rounded-lg overflow-hidden shadow-sm">
+                  {stkStudents.map(s => (
+                    <button
+                      key={s.id}
+                      onClick={() => { setStkStudent(s); setStkSearch(s.full_name); setStkStudents([]); if (s.fee_balance && s.fee_balance > 0) setStkAmount(String(s.fee_balance)) }}
+                      className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 border-b last:border-0"
+                    >
+                      <span className="font-medium text-gray-800">{s.full_name}</span>
+                      {s.admission_number && <span className="ml-2 text-xs text-gray-400">{s.admission_number}</span>}
+                      {s.fee_balance != null && s.fee_balance > 0 && (
+                        <span className="ml-2 text-xs text-red-600 font-medium">bal: {fmt(s.fee_balance)}</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {stkStudent && (
+                <p className="mt-1 text-xs text-green-700 font-medium">
+                  Selected: {stkStudent.full_name} {stkStudent.admission_number ? `(${stkStudent.admission_number})` : ''}
+                </p>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Amount (KSH) *</label>
+                <input
+                  type="number" min="1" value={stkAmount}
+                  onChange={e => setStkAmount(e.target.value)}
+                  className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                  placeholder="e.g. 15000"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Phone Number *</label>
+                <input
+                  type="tel" value={stkPhone}
+                  onChange={e => setStkPhone(e.target.value)}
+                  className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
+                  placeholder="07XXXXXXXX"
+                />
+              </div>
+            </div>
+
+            {stkMsg && (
+              <div className={`rounded-lg px-4 py-3 text-sm font-medium ${stkMsg.ok ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+                {stkMsg.text}
+              </div>
+            )}
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => { setShowStk(false); setStkMsg(null) }}
+                className="flex-1 py-2.5 border rounded-lg text-gray-600 text-sm font-medium hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={submitStkPush}
+                disabled={stkBusy || !stkStudent || !stkAmount || !stkPhone}
+                className="flex-2 px-6 py-2.5 bg-green-600 text-white rounded-lg text-sm font-semibold hover:bg-green-700 disabled:opacity-50"
+              >
+                {stkBusy ? 'Sending…' : 'Send STK Push'}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   )
 }
