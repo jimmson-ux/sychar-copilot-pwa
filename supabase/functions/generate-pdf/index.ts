@@ -6,7 +6,7 @@ const ALLOWED_DOC_TYPES = [
   'aie_requisition', 'fee_statement', 'report_card',
   'report_card_cbc', 'report_card_844',
   'invigilation_chart', 'duty_roster', 'suspension_letter',
-  'merit_list', 'compliance_report',
+  'merit_list', 'compliance_report', 'daily_diary',
 ]
 
 const CSS = `
@@ -91,9 +91,11 @@ serve(async (req: Request) => {
 
 // deno-lint-ignore no-explicit-any
 function generateDocumentHtml(docType: string, data: Record<string, any>): string {
-  if (docType === 'aie_requisition') return aieHtml(data)
-  if (docType === 'report_card_cbc') return reportCardCBCHtml(data)
-  if (docType === 'report_card_844') return reportCard844Html(data)
+  if (docType === 'aie_requisition')  return aieHtml(data)
+  if (docType === 'report_card_cbc')  return reportCardCBCHtml(data)
+  if (docType === 'report_card_844')  return reportCard844Html(data)
+  if (docType === 'suspension_letter') return suspensionLetterHtml(data)
+  if (docType === 'daily_diary')      return dailyDiaryHtml(data)
   // fallback for legacy docTypes
   return `<html><head><style>${CSS}</style></head><body>
     <div class="header">
@@ -102,6 +104,77 @@ function generateDocumentHtml(docType: string, data: Record<string, any>): strin
     </div>
     <pre>${JSON.stringify(data, null, 2)}</pre>
     <p>Generated: ${new Date().toLocaleDateString('en-KE')}</p>
+  </body></html>`
+}
+
+// deno-lint-ignore no-explicit-any
+function suspensionLetterHtml(d: Record<string, any>): string {
+  const fmt = (s: string) => new Date(s).toLocaleDateString('en-KE', { day: '2-digit', month: 'long', year: 'numeric' })
+  const body = (d.letterBody ?? '').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  return `<!DOCTYPE html><html><head><style>
+    body { font-family: 'Times New Roman', serif; max-width: 720px; margin: 40px auto; padding: 0 30px; color: #111; }
+    h1   { text-align:center; font-size:16px; text-transform:uppercase; border-bottom:2px solid #111; padding-bottom:8px; }
+    h2   { text-align:center; font-size:13px; }
+    .meta{ display:grid; grid-template-columns:1fr 1fr; gap:4px 20px; margin:16px 0; font-size:13px; }
+    .body{ margin:24px 0; line-height:1.8; font-size:13px; white-space:pre-wrap; }
+    .sig { margin-top:48px; font-size:13px; }
+    .line{ margin-top:40px; border-top:1px solid #444; width:200px; padding-top:4px; font-size:12px; }
+    .hash{ margin-top:36px; padding-top:10px; border-top:1px solid #ccc; font-size:9px; color:#666; word-break:break-all; }
+    @media print { body { margin:0; } }
+  </style></head><body>
+  <h1>${d.schoolName}</h1>
+  <h2>SUSPENSION LETTER — STRICTLY CONFIDENTIAL</h2>
+  <div class="meta">
+    <span><b>Student:</b> ${d.studentName}</span>
+    <span><b>Class:</b> ${d.className}</span>
+    <span><b>Adm No:</b> ${d.admissionNo || 'N/A'}</span>
+    <span><b>Date:</b> ${fmt(d.approvedAt)}</span>
+    <span><b>Suspension From:</b> ${fmt(d.startDate)}</span>
+    <span><b>Suspension To:</b> ${fmt(d.endDate)} (inclusive)</span>
+  </div>
+  <div class="body">${body}</div>
+  <div class="sig">
+    <p>Yours sincerely,</p>
+    <div class="line">Principal's Signature &amp; Stamp</div>
+  </div>
+  <div class="hash">
+    <b>Document Integrity</b><br>${d.signatureBlock}<br>SHA-256: ${d.documentHash}
+  </div>
+  </body></html>`
+}
+
+// deno-lint-ignore no-explicit-any
+function dailyDiaryHtml(d: Record<string, any>): string {
+  const content = d.content ?? {}
+  // deno-lint-ignore no-explicit-any
+  const renderSection = (title: string, items: any[]) => {
+    if (!items?.length) return ''
+    return `<h3 style="margin:16px 0 6px;font-size:13px;border-bottom:1px solid #ccc">${title}</h3>
+    <ul style="margin:0;padding-left:20px;font-size:12px">
+      ${items.map((i: unknown) => `<li>${typeof i === 'string' ? i : JSON.stringify(i)}</li>`).join('')}
+    </ul>`
+  }
+  return `<!DOCTYPE html><html><head><style>
+    body { font-family: Arial, sans-serif; max-width: 720px; margin: 40px auto; padding: 0 30px; color: #111; font-size: 12px; }
+    h1   { text-align:center; font-size:16px; text-transform:uppercase; border-bottom:2px solid #111; padding-bottom:8px; }
+    .hash{ margin-top:36px; padding-top:10px; border-top:1px solid #ccc; font-size:9px; color:#666; word-break:break-all; }
+    @media print { body { margin:0; } }
+  </style></head><body>
+  <h1>SCHOOL DAILY DIARY — OFFICIAL SEALED RECORD</h1>
+  <p style="text-align:center;font-size:13px"><b>Date:</b> ${d.date} &nbsp;|&nbsp; <b>Sealed:</b> ${new Date(d.sealedAt).toLocaleString('en-KE')}</p>
+  ${renderSection('TOD Reports', content.tod_reports ?? [])}
+  ${renderSection('Attendance Summary', content.attendance ? [
+    `Present: ${content.attendance.present}/${content.attendance.total} (${content.attendance.rate ?? 'N/A'}%)`
+  ] : [])}
+  ${renderSection('Discipline Incidents', content.discipline_incidents ?? [])}
+  ${renderSection('Clinic Visits', content.clinic_visits ?? [])}
+  ${renderSection('Notices Issued', content.notices?.map((n: {title?: string}) => n.title ?? JSON.stringify(n)) ?? [])}
+  ${content.notes ? `<h3 style="margin:16px 0 6px;font-size:13px">Principal Notes</h3><p style="font-size:12px">${content.notes}</p>` : ''}
+  <div class="hash">
+    <b>Document Integrity</b><br>
+    Sealed by: ${d.sealedBy} | At: ${d.sealedAt}<br>
+    SHA-256: ${d.documentHash}
+  </div>
   </body></html>`
 }
 
