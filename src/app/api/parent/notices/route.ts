@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
   const notices = (data ?? [])
     .filter((n: Record<string, unknown>) => {
       const audience = String(n.target_audience ?? n.audience ?? 'all')
-      return audience === 'parents' || audience === 'all'
+      return audience === 'parents' || audience === 'guardians' || audience === 'all'
     })
     .filter((n: Record<string, unknown>) => {
       const exp = n.expires_at as string | null

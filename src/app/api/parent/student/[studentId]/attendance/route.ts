@@ -20,12 +20,13 @@ export async function GET(
     return NextResponse.json({ error: 'Access denied' }, { status: 403 })
   }
 
-  const svc     = createAdminSupabaseClient()
-  const cutoff  = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  const svc    = createAdminSupabaseClient()
+  const cutoff = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
 
+  // student_id on attendance_records is text type — UUID string works as-is
   const { data: records, error } = await svc
     .from('attendance_records')
-    .select('date, status, remarks')
+    .select('date, status, reason')
     .eq('student_id', studentId)
     .eq('school_id', parent.schoolId)
     .gte('date', cutoff)
@@ -33,15 +34,15 @@ export async function GET(
 
   if (error) return NextResponse.json({ error: 'Failed to load attendance' }, { status: 500 })
 
-  const rows   = records ?? []
-  const total  = rows.length
+  const rows    = records ?? []
+  const total   = rows.length
   const present = rows.filter(r => r.status === 'present').length
   const absent  = rows.filter(r => r.status === 'absent').length
   const late    = rows.filter(r => r.status === 'late').length
   const rate    = total ? Math.round((present / total) * 100) : null
 
   return NextResponse.json({
-    records: rows,
+    records: rows.map(r => ({ date: r.date, status: r.status, remarks: r.reason })),
     summary: { total, present, absent, late, rate },
   })
 }
