@@ -40,6 +40,9 @@ export type School = {
   is_active:               boolean
   subscription_expires_at: string
   created_at:              string
+  // Joined from tenant_configs
+  school_short_code?:      string | null
+  tenant_configs?:         { school_short_code: string | null }[] | null
 }
 
 // ── ADDON_KEYS ────────────────────────────────────────────────

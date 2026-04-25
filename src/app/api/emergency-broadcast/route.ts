@@ -42,7 +42,7 @@ export async function GET(_req: NextRequest) {
     .order('created_at', { ascending: false })
     .limit(20)
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
 
   const broadcasts = (data ?? []).map(b => {
     const d = b as {

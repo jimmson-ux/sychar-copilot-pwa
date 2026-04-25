@@ -38,7 +38,7 @@ export async function GET(req: NextRequest) {
   if (staff) query = query.eq('counselor_id', (staff as { id: string }).id)
 
   const { data, error } = await query
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   return NextResponse.json({ sessions: data ?? [] })
 }
 
@@ -109,7 +109,7 @@ export async function POST(req: NextRequest) {
     .select('id, session_date, session_type')
     .single()
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
 
   // Update case last_session_date + session count
   await db.from('counseling_cases').update({

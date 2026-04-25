@@ -27,7 +27,7 @@ export async function GET() {
     .order('category')
     .order('name')
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   return NextResponse.json({ items: data ?? [] })
 }
 
@@ -56,7 +56,7 @@ export async function POST(req: NextRequest) {
     geo_radius_m:   body.geo_radius_m ?? 50,
   }).select('id').single()
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   return NextResponse.json({ id: (data as { id: string }).id })
 }
 
@@ -76,6 +76,6 @@ export async function PATCH(req: NextRequest) {
   }
 
   const { error } = await db.from('inventory_items').update(allowed).eq('id', body.id).eq('school_id', auth.schoolId!)
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   return NextResponse.json({ ok: true })
 }

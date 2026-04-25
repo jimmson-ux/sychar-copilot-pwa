@@ -46,7 +46,7 @@ export async function GET(req: NextRequest) {
   if (category)  query = query.eq('category',   category)
 
   const { data, error } = await query
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   return NextResponse.json({ points: data ?? [] })
 }
 

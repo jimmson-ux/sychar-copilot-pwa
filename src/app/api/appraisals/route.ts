@@ -65,7 +65,7 @@ export async function GET(req: NextRequest) {
 
   if (error) {
     console.error('[appraisals] GET error:', error.message)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 
   // Compute term summary per teacher
@@ -198,7 +198,7 @@ export async function POST(req: NextRequest) {
 
   if (error) {
     console.error('[appraisals] POST error:', error.message)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 
   // Mark duty assignment as acknowledged

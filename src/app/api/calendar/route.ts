@@ -34,7 +34,7 @@ export async function GET(req: NextRequest) {
   if (cat) query = query.eq('category', cat)
 
   const { data, error } = await query
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
 
   return NextResponse.json({ events: data ?? [] })
 }
@@ -79,7 +79,7 @@ export async function POST(req: NextRequest) {
     .select('id, title, event_date, event_time, category')
     .single()
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
 
   const ev = event as { id: string; title: string; event_date: string; event_time: string | null; category: string }
   let blastResult: { sent: number; failed: number } | null = null

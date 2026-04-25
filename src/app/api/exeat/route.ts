@@ -36,7 +36,7 @@ export async function GET(_req: NextRequest) {
 
   if (error) {
     console.error('[exeat] GET error:', error.message)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 
   return NextResponse.json({ requests: data ?? [] })
@@ -116,7 +116,7 @@ export async function POST(req: NextRequest) {
 
   if (error) {
     console.error('[exeat] POST error:', error.message)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 
   // Alert principal/dean

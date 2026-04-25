@@ -178,6 +178,25 @@ export default function AdminBillingPage() {
         ))}
       </div>
 
+      {/* ── Expiry alert banner ────────────────────────────── */}
+      {expiringCount > 0 && (
+        <div style={{
+          background:   'rgba(239,159,39,0.10)',
+          border:       `1px solid rgba(239,159,39,0.25)`,
+          borderRadius: 8,
+          padding:      '10px 16px',
+          marginBottom: 16,
+          display:      'flex',
+          alignItems:   'center',
+          gap:          10,
+        }}>
+          <span style={{ fontSize: 16 }}>⚠️</span>
+          <span style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.amber }}>
+            {expiringCount} school{expiringCount !== 1 ? 's' : ''} expiring within 30 days — highlighted in table below
+          </span>
+        </div>
+      )}
+
       {/* ── Filter bar ─────────────────────────────────────── */}
       <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center' }}>
         <input
@@ -259,15 +278,21 @@ export default function AdminBillingPage() {
                 const inv   = pricing ? calculateYearlyInvoice(school, pricing) : null
                 const days  = getDaysUntilExpiry(school.subscription_expires_at)
                 const badge = getExpiryBadge(days)
+                const expiryRowBg = !school.is_active ? 'transparent'
+                  : days < 0   ? 'rgba(226,75,74,0.07)'
+                  : days <= 30 ? 'rgba(239,159,39,0.05)'
+                  : 'transparent'
+
                 return (
                   <tr
                     key={school.id}
                     style={{
                       borderBottom: `1px solid ${C.borderSub}`,
                       opacity:      school.is_active ? 1 : 0.45,
+                      background:   expiryRowBg,
                     }}
                     onMouseEnter={e => { (e.currentTarget as HTMLTableRowElement).style.background = 'rgba(255,255,255,0.02)' }}
-                    onMouseLeave={e => { (e.currentTarget as HTMLTableRowElement).style.background = 'transparent' }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLTableRowElement).style.background = expiryRowBg }}
                   >
                     <td style={{ padding: '12px 14px' }}>
                       <span style={{ fontSize: 13, fontWeight: 500, color: C.text }}>{school.name}</span>

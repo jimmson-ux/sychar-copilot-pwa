@@ -1,48 +1,57 @@
 {
   "name": "Sychar CoPilot",
   "short_name": "Sychar",
-  "description": "Intelligent school management for Kenyan secondary schools",
-  "start_url": "/dashboard/teacher",
+  "description": "The future of educational management",
+  "start_url": "/dashboard",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait-primary",
-  "background_color": "#1e3a8a",
-  "theme_color": "#1e3a8a",
+  "background_color": "#ffffff",
+  "theme_color": "#1e40af",
   "categories": ["education", "productivity"],
   "icons": [
+    {
+      "src": "/icons/icon-72.png",
+      "sizes": "72x72",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/icon-96.png",
+      "sizes": "96x96",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/icon-128.png",
+      "sizes": "128x128",
+      "type": "image/png"
+    },
     {
       "src": "/icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any"
+      "purpose": "any maskable"
     },
     {
       "src": "/icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "/icon-maskable-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "maskable"
+      "purpose": "any maskable"
     }
   ],
   "shortcuts": [
     {
-      "name": "Dashboard",
-      "url": "/dashboard",
+      "name": "Attendance",
+      "url": "/dashboard/attendance",
+      "icons": [{"src": "/icon-192.png", "sizes": "192x192"}]
+    },
+    {
+      "name": "Students",
+      "url": "/dashboard/students",
       "icons": [{"src": "/icon-192.png", "sizes": "192x192"}]
     },
     {
       "name": "Record Lesson",
       "url": "/record",
-      "icons": [{"src": "/icon-192.png", "sizes": "192x192"}]
-    },
-    {
-      "name": "Attendance",
-      "url": "/dashboard/teacher",
       "icons": [{"src": "/icon-192.png", "sizes": "192x192"}]
     }
   ]

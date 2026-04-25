@@ -94,6 +94,6 @@ export async function POST(req: NextRequest) {
     assessed_at:   body.assessed_at ?? new Date().toISOString().split('T')[0],
   }).select('id').single()
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   return NextResponse.json({ id: (data as { id: string }).id, created: true })
 }

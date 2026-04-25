@@ -109,7 +109,7 @@ export async function POST(req: NextRequest) {
   const resp0      = visionData.responses?.[0]
 
   if (resp0?.error) {
-    return NextResponse.json({ error: `Vision API: ${resp0.error.message}` }, { status: 502 })
+    return NextResponse.json({ error: 'Vision API unavailable' }, { status: 502 })
   }
 
   const fullText      = resp0?.fullTextAnnotation?.text ?? ''

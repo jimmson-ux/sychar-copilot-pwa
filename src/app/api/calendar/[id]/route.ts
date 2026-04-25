@@ -62,7 +62,7 @@ export async function PATCH(
     .select('id, title, event_date, event_time, category, audience')
     .single()
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   return NextResponse.json({ ok: true, event: data })
 }
 
@@ -85,6 +85,6 @@ export async function DELETE(
     .eq('id', id)
     .eq('school_id', auth.schoolId!)
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   return NextResponse.json({ ok: true })
 }

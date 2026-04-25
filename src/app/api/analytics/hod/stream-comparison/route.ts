@@ -84,7 +84,7 @@ export async function GET(req: NextRequest) {
     .eq('subject_id', subjectId)
     .eq('term', term)
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
 
   if (!marks?.length) {
     return NextResponse.json({ streams: [], variance_flag: false, variance_percentage: 0, insight: 'No marks found for this period.' })

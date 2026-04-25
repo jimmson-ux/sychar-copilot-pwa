@@ -88,7 +88,7 @@ export async function POST(req: NextRequest) {
     .select('id, admitted_at')
     .single()
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
 
   const v = visit as { id: string; admitted_at: string }
 

@@ -43,7 +43,7 @@ export async function GET(req: NextRequest) {
   if (studentId) query = query.eq('student_id', studentId)
 
   const { data, error } = await query
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
 
   const rows = data as unknown as {
     student_id: string; category: string; points: number; awarded_at: string;

@@ -69,7 +69,7 @@ export async function GET(req: NextRequest) {
   const { data, error } = await query
   if (error) {
     console.error('[schemes] GET error:', error.message)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 
   return NextResponse.json({ schemes: data ?? [] })
@@ -130,7 +130,7 @@ export async function POST(req: NextRequest) {
 
   if (error) {
     console.error('[schemes] POST error:', error.message)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 
   return NextResponse.json({ ok: true, id: (data as { id: string }).id }, { status: 201 })

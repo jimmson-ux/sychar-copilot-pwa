@@ -23,7 +23,7 @@ export async function GET(_req: NextRequest) {
     .order('item_name')
     .limit(30)
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
 
   const items = (data ?? []).map((i: {
     id: string; item_name: string; current_count: number;
@@ -73,6 +73,6 @@ export async function POST(req: NextRequest) {
     .select('id, item_name, current_count')
     .single()
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   return NextResponse.json({ ok: true, item: data })
 }

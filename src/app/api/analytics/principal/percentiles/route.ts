@@ -59,7 +59,7 @@ export async function GET(req: NextRequest) {
     .eq('term', term)
     .in('student_id', studentIds)
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
 
   // ── Mean per student ──────────────────────────────────────
   const meanMap = new Map<string, { total: number; count: number }>()

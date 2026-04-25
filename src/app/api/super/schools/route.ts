@@ -63,7 +63,7 @@ export async function GET() {
   ])
 
   if (schoolsRes.error) {
-    return NextResponse.json({ error: schoolsRes.error.message }, { status: 500 })
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 
   // Index subscriptions by school_id

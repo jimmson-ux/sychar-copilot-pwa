@@ -40,7 +40,7 @@ export async function GET(req: NextRequest) {
         .eq('school_id', auth.schoolId)
         .eq('term', term)
 
-      if (error) throw new Error(error.message)
+      if (error) throw error
       if (!marks?.length) {
         return {
           term,

@@ -69,7 +69,7 @@ export async function POST(req: NextRequest) {
 
   if (error) {
     console.error('[wallet/freeze] POST error:', error.message)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 
   await db.from('system_logs').insert({

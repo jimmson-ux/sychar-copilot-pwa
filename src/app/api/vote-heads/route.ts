@@ -43,7 +43,7 @@ export async function GET(req: NextRequest) {
   if (term) query = query.eq('term', Number(term))
 
   const { data, error } = await query
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
 
   // Attach recent transactions
   const ids = (data ?? []).map((v: { id: string }) => v.id)
@@ -124,7 +124,7 @@ export async function POST(req: NextRequest) {
       ignoreDuplicates: false,
     }).select('id, name, allocated_amount')
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
     return NextResponse.json({ created: data?.length ?? 0, n_learners: n, vote_heads: data })
   }
 
@@ -144,6 +144,6 @@ export async function POST(req: NextRequest) {
     term:             body.term,
   }).select('id').single()
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   return NextResponse.json({ id: (data as { id: string }).id })
 }

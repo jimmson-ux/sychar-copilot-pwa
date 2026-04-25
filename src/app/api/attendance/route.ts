@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
   const { data, error } = await query.order('date', { ascending: false }).limit(100)
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 
   const records = data ?? []
@@ -65,7 +65,7 @@ export async function POST(req: NextRequest) {
 
     if (error) {
       console.error('attendance upsert error:', error)
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
     }
 
     return NextResponse.json({ success: true, count: records.length })

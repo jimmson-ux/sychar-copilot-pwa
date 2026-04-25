@@ -26,7 +26,7 @@ export async function GET(_req: NextRequest) {
     .eq('school_id', auth.schoolId!)
     .order('created_at', { ascending: false })
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
 
   const enriched = (projects ?? []).map((p: {
     id: string; title: string; description: string | null; target_amount: number;
@@ -74,6 +74,6 @@ export async function POST(req: NextRequest) {
     .select('id, title, target_amount')
     .single()
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   return NextResponse.json({ ok: true, project: data })
 }

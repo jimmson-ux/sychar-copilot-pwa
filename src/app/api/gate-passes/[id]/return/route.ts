@@ -60,7 +60,7 @@ export async function PATCH(
 
   if (error) {
     console.error('[gate-passes/return] PATCH error:', error.message)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 
   if (isLate) {

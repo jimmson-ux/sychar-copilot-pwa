@@ -92,7 +92,7 @@ export async function PATCH(
   if (body.status === 'closed')     updates.closed_at = now
 
   const { error } = await db.from('aie_forms').update(updates).eq('id', id).eq('school_id', auth.schoolId!)
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
 
   return NextResponse.json({ ok: true, status: body.status })
 }

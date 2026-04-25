@@ -112,7 +112,7 @@ export async function POST(req: NextRequest) {
   if (rows.length === 0) return NextResponse.json({ saved: 0 })
 
   const { error } = await db.from('attendance_records').insert(rows)
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
 
   return NextResponse.json({ saved: rows.length })
 }

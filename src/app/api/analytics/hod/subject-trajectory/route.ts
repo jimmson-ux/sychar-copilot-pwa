@@ -80,7 +80,7 @@ export async function GET(req: NextRequest) {
         .order('academic_year', { ascending: true })
         .order('term', { ascending: true })
 
-      if (error) throw new Error(error.message)
+      if (error) throw error
 
       // Group by term label
       const termMap = new Map<string, {

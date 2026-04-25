@@ -88,7 +88,7 @@ export async function PATCH(
 
   if (error) {
     console.error('[exeat/review] PATCH error:', error.message)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 
   const stu         = Array.isArray(e.students) ? e.students[0] : e.students

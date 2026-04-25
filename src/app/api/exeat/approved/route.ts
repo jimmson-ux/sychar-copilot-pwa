@@ -33,7 +33,7 @@ export async function GET(req: NextRequest) {
 
   if (error) {
     console.error('[exeat/approved] GET error:', error.message)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 
   return NextResponse.json({ approved: data ?? [], date: today })

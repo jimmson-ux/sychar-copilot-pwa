@@ -32,7 +32,7 @@ export async function GET(req: NextRequest) {
   if (projectId) query = query.eq('project_id', projectId)
 
   const { data, error } = await query
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   return NextResponse.json({ donations: data ?? [] })
 }
 
@@ -98,7 +98,7 @@ export async function POST(req: NextRequest) {
     .select('id')
     .single()
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
 
   // Update project raised_amount
   const p = project as { raised_amount: number; target_amount: number }

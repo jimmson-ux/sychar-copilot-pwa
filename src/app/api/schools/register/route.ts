@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
 
   if (error) {
     console.error('[register_school]', error)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 
   // Fetch the auto-generated short code for the welcome email

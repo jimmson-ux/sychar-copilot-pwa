@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
   if (year) query = query.eq('graduation_year', parseInt(year))
 
   const { data, error } = await query
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
 
   const alumni = (data ?? []) as {
     id: string; graduation_year: number; kcse_grade: string | null;
@@ -114,6 +114,6 @@ export async function PATCH(req: NextRequest) {
   if (body.verified             !== undefined) updates.verified             = body.verified
 
   const { error } = await db.from('alumni').update(updates).eq('id', body.alumni_id)
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   return NextResponse.json({ ok: true })
 }

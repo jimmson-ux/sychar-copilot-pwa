@@ -71,7 +71,7 @@ export async function POST(req: NextRequest) {
   }
 
   const { data, error } = await db.from('lesson_sessions').insert(row).select('id').single()
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
 
   return NextResponse.json({ id: (data as { id: string }).id })
 }
@@ -105,6 +105,6 @@ export async function PATCH(req: NextRequest) {
     .eq('teacher_id', staff.id as string)
     .eq('school_id', schoolId!)
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   return NextResponse.json({ ok: true })
 }

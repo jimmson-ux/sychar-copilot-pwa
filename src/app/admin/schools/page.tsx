@@ -148,7 +148,9 @@ export default function AdminSchoolsPage() {
   async function fetchData() {
     const supabase = createClient()
     const [schoolsRes, pricingRes] = await Promise.all([
-      supabase.from('schools').select('*').order('created_at', { ascending: false }),
+      supabase.from('schools')
+        .select('*, tenant_configs(school_short_code)')
+        .order('created_at', { ascending: false }),
       supabase.from('global_settings').select('addon_pricing').eq('id', 1).single(),
     ])
     if (schoolsRes.data)   setSchools(schoolsRes.data as School[])
@@ -377,7 +379,7 @@ export default function AdminSchoolsPage() {
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ borderBottom: `1px solid ${C.borderSub}` }}>
-                    {['School', 'County', 'Students', 'Subscription', 'Add-ons', 'Annual Fee', 'Status', ''].map((col, i) => (
+                    {['Code', 'School', 'County', 'Students', 'Subscription', 'Add-ons', 'Annual Fee', 'Status', ''].map((col, i) => (
                       <th key={i} style={{
                         padding:       '11px 14px',
                         textAlign:     'left',
@@ -422,6 +424,28 @@ export default function AdminSchoolsPage() {
                             (e.currentTarget as HTMLTableRowElement).style.background = 'transparent'
                         }}
                       >
+                        {/* Short code */}
+                        <td style={{ padding: '13px 14px' }}>
+                          {(() => {
+                            const code = Array.isArray(school.tenant_configs)
+                              ? school.tenant_configs[0]?.school_short_code
+                              : null
+                            return code ? (
+                              <span style={{
+                                fontFamily:    FONT_MONO,
+                                fontSize:      13,
+                                fontWeight:    700,
+                                color:         C.accent,
+                                letterSpacing: '0.05em',
+                              }}>
+                                {code}
+                              </span>
+                            ) : (
+                              <span style={{ fontFamily: FONT_MONO, fontSize: 11, color: C.dim }}>—</span>
+                            )
+                          })()}
+                        </td>
+
                         {/* School name */}
                         <td style={{ padding: '13px 14px' }}>
                           <span style={{ fontWeight: 500, fontSize: 13, color: C.text }}>
@@ -548,6 +572,59 @@ export default function AdminSchoolsPage() {
             </div>
 
             <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+              {/* ── School code ──────────────────────────────── */}
+              {(() => {
+                const code = Array.isArray(selectedSchool.tenant_configs)
+                  ? selectedSchool.tenant_configs[0]?.school_short_code
+                  : null
+                return (
+                  <div>
+                    <SectionLabel>School Code</SectionLabel>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <span style={{
+                        fontFamily:    FONT_MONO,
+                        fontSize:      28,
+                        fontWeight:    800,
+                        color:         C.accent,
+                        letterSpacing: '0.12em',
+                      }}>
+                        {code ?? '—'}
+                      </span>
+                      <button
+                        onClick={async () => {
+                          if (!window.confirm('Regenerate the 4-digit code for this school? The old code will stop working immediately.')) return
+                          const supabase = createClient()
+                          const { data: newCode } = await supabase.rpc('generate_school_short_code')
+                          if (newCode) {
+                            await supabase
+                              .from('tenant_configs')
+                              .update({ school_short_code: newCode })
+                              .eq('school_id', selectedSchool.id)
+                            await fetchData()
+                          }
+                        }}
+                        style={{
+                          padding:      '5px 10px',
+                          borderRadius: 5,
+                          border:       `1px solid ${C.borderStr}`,
+                          background:   C.elevated,
+                          color:        C.muted,
+                          fontFamily:   FONT_MONO,
+                          fontSize:     10,
+                          cursor:       'pointer',
+                          letterSpacing:'0.05em',
+                        }}
+                      >
+                        ↺ REGEN
+                      </button>
+                    </div>
+                    <p style={{ fontFamily: FONT_MONO, fontSize: 9, color: C.dim, marginTop: 4, letterSpacing: '0.06em' }}>
+                      PARENTS &amp; NTS SMS USE THIS CODE TO IDENTIFY THE SCHOOL
+                    </p>
+                  </div>
+                )
+              })()}
 
               {/* ── Invoice breakdown ────────────────────────── */}
               {pricing && (() => {
