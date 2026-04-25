@@ -13,6 +13,7 @@ supabase functions deploy sms-gateway           --project-ref $PROJECT_REF
 supabase functions deploy verify-attendance-gps --project-ref $PROJECT_REF
 supabase functions deploy generate-qr-token      --project-ref $PROJECT_REF
 supabase functions deploy sms-nts-attendance     --project-ref $PROJECT_REF
+supabase functions deploy morning-brief          --project-ref $PROJECT_REF
 
 echo "Setting secrets..."
 supabase secrets set \

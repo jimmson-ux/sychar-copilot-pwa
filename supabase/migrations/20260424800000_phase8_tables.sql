@@ -89,6 +89,16 @@ CREATE TABLE IF NOT EXISTS public.pta_ballots (
   created_at      timestamptz DEFAULT now()
 );
 
+-- Add columns that may be missing if table existed before this migration
+ALTER TABLE public.pta_ballots
+  ADD COLUMN IF NOT EXISTS status          text DEFAULT 'active'
+    CHECK (status IN ('draft', 'active', 'closed')),
+  ADD COLUMN IF NOT EXISTS min_fee_percent integer DEFAULT 0
+    CHECK (min_fee_percent BETWEEN 0 AND 100),
+  ADD COLUMN IF NOT EXISTS description     text,
+  ADD COLUMN IF NOT EXISTS options         jsonb NOT NULL DEFAULT '[]',
+  ADD COLUMN IF NOT EXISTS created_by      uuid;
+
 CREATE INDEX IF NOT EXISTS idx_pta_ballots_school
   ON public.pta_ballots(school_id, status, closing_at DESC);
 
