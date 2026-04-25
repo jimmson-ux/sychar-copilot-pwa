@@ -26,8 +26,7 @@ const nextConfig: NextConfig = {
     formats: ['image/avif', 'image/webp'],
   },
 
-  async headers() {
-    return [
+  headers: async () => [
       {
         source: '/(.*)',
         headers: [
@@ -46,8 +45,8 @@ const nextConfig: NextConfig = {
             value: [
               "default-src 'self'",
               "script-src 'self' 'unsafe-eval' 'unsafe-inline'",
-              "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-              "font-src 'self' https://fonts.gstatic.com data:",
+              "style-src 'self' 'unsafe-inline'",
+              "font-src 'self' data:",
               "img-src 'self' data: blob: https: https://*.supabase.co",
               "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.anthropic.com https://generativelanguage.googleapis.com https://api.cloudinary.com",
               "media-src 'self' blob: https://*.supabase.co",
@@ -68,7 +67,13 @@ const nextConfig: NextConfig = {
         ],
       },
       {
-        source: '/(manifest.json|sw.js|icons/.*)',
+        source: '/(manifest.json|manifest-parent.json)',
+        headers: [
+          { key: 'Cache-Control', value: 'public, max-age=0, must-revalidate' },
+        ],
+      },
+      {
+        source: '/icons/(.*)',
         headers: [
           { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' },
         ],
@@ -86,8 +91,7 @@ const nextConfig: NextConfig = {
           { key: 'Service-Worker-Allowed', value: '/' },
         ],
       },
-    ]
-  },
+  ],
 
   async redirects() {
     return [
