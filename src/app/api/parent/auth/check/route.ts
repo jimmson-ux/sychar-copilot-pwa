@@ -40,15 +40,27 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  // Find students linked to this parent phone
-  const { data: students } = await svc
-    .from('students')
-    .select('id, full_name, class_name, current_form')
-    .eq('school_id', (tenant as { school_id: string }).school_id)
-    .or(`parent_phone.eq.${phone},parent2_phone.eq.${phone}`)
-    .eq('is_active', true)
-
-  const studentList = students ?? []
+  // Find students linked to this parent phone.
+  // Try with parent2_phone first; fall back to primary phone only if that column doesn't exist.
+  const schoolId = (tenant as { school_id: string }).school_id
+  let studentList: { id: string; full_name: string; class_name: string | null }[] = []
+  {
+    const { data, error } = await svc
+      .from('students')
+      .select('id, full_name, class_name, current_form')
+      .eq('school_id', schoolId)
+      .or(`parent_phone.eq.${phone},parent2_phone.eq.${phone}`)
+    if (!error) {
+      studentList = (data ?? []) as typeof studentList
+    } else {
+      const { data: fallback } = await svc
+        .from('students')
+        .select('id, full_name, class_name, current_form')
+        .eq('school_id', schoolId)
+        .eq('parent_phone', phone)
+      studentList = (fallback ?? []) as typeof studentList
+    }
+  }
 
   if (studentList.length === 0) {
     return NextResponse.json({
@@ -59,10 +71,10 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({
     found:        true,
-    schoolId:     (tenant as { school_id: string }).school_id,
+    schoolId,
     schoolName:   (tenant as { name: string }).name,
     studentCount: studentList.length,
-    students:     studentList.map((s: { id: string; full_name: string; class_name: string | null }) => ({
+    students:     studentList.map(s => ({
       id: s.id,
       name: s.full_name,
       class: s.class_name,

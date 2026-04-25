@@ -76,14 +76,25 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  // Fetch ALL student IDs linked to this parent phone in this school
-  const { data: siblings } = await svc
-    .from('students')
-    .select('id')
-    .eq('school_id', ctx.school_id)
-    .or(`parent_phone.eq.${parentPhone},parent2_phone.eq.${parentPhone}`)
-
-  const studentIds = (siblings ?? []).map((s: { id: string }) => s.id)
+  // Fetch ALL student IDs linked to this parent phone in this school.
+  // Try both parent_phone and parent2_phone (parent2_phone may not exist on all DB instances).
+  let studentIds: string[] = []
+  try {
+    const { data: siblings } = await svc
+      .from('students')
+      .select('id')
+      .eq('school_id', ctx.school_id)
+      .or(`parent_phone.eq.${parentPhone},parent2_phone.eq.${parentPhone}`)
+    studentIds = (siblings ?? []).map((s: { id: string }) => s.id)
+  } catch {
+    const { data: siblings } = await svc
+      .from('students')
+      .select('id')
+      .eq('school_id', ctx.school_id)
+      .eq('parent_phone', parentPhone)
+    studentIds = (siblings ?? []).map((s: { id: string }) => s.id)
+  }
+  if (studentIds.length === 0) studentIds = [ctx.student_id]
 
   const otp       = generateOTP()
   const expiresAt = new Date(Date.now() + OTP_TTL_MS).toISOString()

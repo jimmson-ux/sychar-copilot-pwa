@@ -14,17 +14,32 @@ export async function GET(req: NextRequest) {
 
   const svc = createAdminSupabaseClient()
 
-  const { data, error } = await svc
+  // Remote schema may use `content`/`target_audience`/`created_at` instead of
+  // `body`/`audience`/`published_at` — query permissively and normalise.
+  const { data } = await svc
     .from('notices')
-    .select('id, title, body, category, published_at, expires_at, attachment_url')
+    .select('id, title, content, body, category, target_audience, audience, created_at, published_at, expires_at')
     .eq('school_id', parent.schoolId)
-    .in('audience', ['parents', 'all'])
-    .lte('published_at', new Date().toISOString())
-    .or(`expires_at.is.null,expires_at.gte.${new Date().toISOString()}`)
-    .order('published_at', { ascending: false })
+    .order('created_at', { ascending: false })
     .limit(30)
 
-  if (error) return NextResponse.json({ error: 'Failed to load notices' }, { status: 500 })
+  const now = new Date().toISOString()
+  const notices = (data ?? [])
+    .filter((n: Record<string, unknown>) => {
+      const audience = String(n.target_audience ?? n.audience ?? 'all')
+      return audience === 'parents' || audience === 'all'
+    })
+    .filter((n: Record<string, unknown>) => {
+      const exp = n.expires_at as string | null
+      return !exp || exp >= now
+    })
+    .map((n: Record<string, unknown>) => ({
+      id:           n.id,
+      title:        n.title,
+      body:         n.content ?? n.body ?? '',
+      category:     n.category ?? 'General',
+      published_at: n.published_at ?? n.created_at,
+    }))
 
-  return NextResponse.json({ notices: data ?? [] })
+  return NextResponse.json({ notices })
 }
