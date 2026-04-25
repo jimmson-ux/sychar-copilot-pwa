@@ -34,11 +34,24 @@ function Stat({ label, value, color, sub }: { label: string; value: string | num
 }
 
 export default function CommandCentrePage() {
-  const [schools,  setSchools]  = useState<School[]>([])
-  const [stats,    setStats]    = useState<Stats | null>(null)
-  const [loading,  setLoading]  = useState(true)
-  const [filter,   setFilter]   = useState<'all' | 'green' | 'amber' | 'red'>('all')
-  const [search,   setSearch]   = useState('')
+  const [schools,      setSchools]      = useState<School[]>([])
+  const [stats,        setStats]        = useState<Stats | null>(null)
+  const [loading,      setLoading]      = useState(true)
+  const [filter,       setFilter]       = useState<'all' | 'green' | 'amber' | 'red'>('all')
+  const [search,       setSearch]       = useState('')
+  const [codePatch,    setCodePatch]    = useState<Record<string, string>>({})
+  const [regenLoading, setRegenLoading] = useState<Record<string, boolean>>({})
+
+  async function regenCode(schoolId: string) {
+    setRegenLoading(p => ({ ...p, [schoolId]: true }))
+    try {
+      const r = await fetch(`/api/super/schools/${schoolId}/regen-code`, { method: 'POST' })
+      const d = await r.json()
+      if (r.ok && d.short_code) setCodePatch(p => ({ ...p, [schoolId]: d.short_code }))
+    } finally {
+      setRegenLoading(p => ({ ...p, [schoolId]: false }))
+    }
+  }
 
   useEffect(() => {
     fetch('/api/super/fleet')
@@ -117,7 +130,21 @@ export default function CommandCentrePage() {
                   <div style={{ fontWeight: 600, color: C.text }}>{s.name}</div>
                   {!s.isActive && <div style={{ fontSize: 9, color: C.red, letterSpacing: '0.1em' }}>SUSPENDED</div>}
                 </td>
-                <td style={{ padding: '11px 14px', color: C.accent, fontWeight: 700 }}>{s.shortCode ?? '—'}</td>
+                <td style={{ padding: '11px 14px' }}>
+                  <span style={{ color: C.accent, fontWeight: 700, fontFamily: MONO }}>
+                    {codePatch[s.id] ?? s.shortCode ?? '—'}
+                  </span>
+                  <button
+                    onClick={() => regenCode(s.id)}
+                    disabled={regenLoading[s.id]}
+                    title="Regenerate short code"
+                    style={{
+                      marginLeft: 8, background: 'none', border: 'none', cursor: regenLoading[s.id] ? 'default' : 'pointer',
+                      color: regenLoading[s.id] ? C.muted : C.accentL, fontSize: 13, padding: 0, lineHeight: 1,
+                      opacity: regenLoading[s.id] ? 0.4 : 1,
+                    }}
+                  >↺</button>
+                </td>
                 <td style={{ padding: '11px 14px', color: C.muted }}>{s.county ?? '—'}</td>
                 <td style={{ padding: '11px 14px', color: C.text }}>{s.studentCount.toLocaleString()}</td>
                 <td style={{ padding: '11px 14px', color: C.text }}>{s.staffCount}</td>
