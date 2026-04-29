@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSupabaseClient } from '@/lib/supabase-server'
-import { sendWhatsApp as sendWhatsAppMessage } from '@/lib/whatsapp'
 
 export const dynamic = 'force-dynamic'
 
@@ -118,11 +117,5 @@ export async function POST(req: NextRequest) {
     is_active:     true,
   })
 
-  // Deliver OTP via WhatsApp
-  await sendWhatsAppMessage(
-    parentPhone,
-    `Your Sychar CoPilot verification code is: *${otp}*\n\nExpires in 10 minutes. Do not share this code.`,
-  )
-
-  return NextResponse.json({ sent: true })
+  return NextResponse.json({ sent: true, otp })
 }

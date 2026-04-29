@@ -98,10 +98,10 @@ export default function ParentVerifyPage() {
     <div style={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '24px 20px' }}>
       <div style={{ width: '100%', maxWidth: 380 }}>
         <div style={{ textAlign: 'center', marginBottom: 32 }}>
-          <div style={{ fontSize: 48, marginBottom: 12 }}>💬</div>
-          <h1 style={{ fontSize: 22, fontWeight: 700, color: '#14532d', margin: 0 }}>Check WhatsApp</h1>
+          <div style={{ fontSize: 48, marginBottom: 12 }}>🔐</div>
+          <h1 style={{ fontSize: 22, fontWeight: 700, color: '#14532d', margin: 0 }}>Enter Code</h1>
           <p style={{ fontSize: 13, color: '#4b7a5e', margin: '6px 0 0' }}>
-            Enter the 6-digit code sent to<br />
+            Enter the 6-digit verification code for<br />
             <strong>{ctx?.phone ?? '…'}</strong>
           </p>
         </div>

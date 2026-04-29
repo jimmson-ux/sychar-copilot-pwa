@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic'
 
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter, useParams } from 'next/navigation'
+import BottomNav from '../../_components/BottomNav'
 
 const G = '#16a34a'
 
@@ -102,7 +103,7 @@ export default function ChildDetailPage() {
   ]
 
   return (
-    <div style={{ maxWidth: 480, margin: '0 auto', minHeight: '100dvh' }}>
+    <div style={{ maxWidth: 480, margin: '0 auto', minHeight: '100dvh', paddingBottom: 64 }}>
       {/* Header */}
       <div style={{ background: G, padding: '16px 16px 56px', color: 'white' }}>
         <button
@@ -320,6 +321,8 @@ export default function ChildDetailPage() {
           </div>
         )}
       </div>
+
+      <BottomNav />
     </div>
   )
 }

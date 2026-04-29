@@ -64,8 +64,8 @@ export default function ParentLoginPage() {
         return
       }
 
-      const schoolId  = checkData.schoolId as string
-      const firstId   = checkData.students?.[0]?.id as string
+      const schoolId = checkData.schoolId as string
+      const firstId  = checkData.students?.[0]?.id as string
 
       if (!firstId) {
         setError('No student linked to this phone number at this school.')
@@ -74,11 +74,10 @@ export default function ParentLoginPage() {
         return
       }
 
-      // Build context token
       const _ctx = btoa(JSON.stringify({ school_id: schoolId, student_id: firstId }))
 
-      // Step 2: request OTP
-      const otpRes = await fetch('/api/parent/auth/request-otp', {
+      // Step 2: request OTP (returned directly — no WhatsApp)
+      const otpRes  = await fetch('/api/parent/auth/request-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ _ctx }),
@@ -86,15 +85,31 @@ export default function ParentLoginPage() {
       const otpData = await otpRes.json()
 
       if (!otpRes.ok) {
-        setError(otpData.error ?? 'Failed to send OTP. Try again.')
+        setError(otpData.error ?? 'Login failed. Try again.')
         setStep('entry')
         setLoading(false)
         return
       }
 
-      // Store state for OTP page
-      sessionStorage.setItem('parent_auth', JSON.stringify({ phone: normPhone, schoolId, _ctx }))
-      router.push('/parent/verify')
+      // Step 3: auto-verify with the returned OTP (zero-friction)
+      const verifyRes = await fetch('/api/parent/auth/verify-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: normPhone, otp: otpData.otp, school_id: schoolId }),
+      })
+      const verifyData = await verifyRes.json()
+
+      if (!verifyRes.ok) {
+        // Fallback: let user enter code manually
+        sessionStorage.setItem('parent_auth', JSON.stringify({ phone: normPhone, schoolId, _ctx }))
+        router.push('/parent/verify')
+        return
+      }
+
+      localStorage.setItem('parent_token',      verifyData.token)
+      localStorage.setItem('parent_school_id',  schoolId)
+      localStorage.setItem('parent_student_ids', JSON.stringify(verifyData.student_ids))
+      router.replace('/parent/dashboard')
 
     } catch {
       setError('Network error. Check your connection.')
@@ -167,9 +182,9 @@ export default function ParentLoginPage() {
 
           {step === 'sending' && (
             <div style={{ textAlign: 'center', padding: '20px 0' }}>
-              <div style={{ fontSize: 40, marginBottom: 16 }}>📲</div>
+              <div style={{ fontSize: 40, marginBottom: 16 }}>🔑</div>
               <p style={{ color: '#374151', fontSize: 14 }}>
-                Sending a verification code to your WhatsApp…
+                Signing you in…
               </p>
               <p style={{ color: '#9ca3af', fontSize: 12, marginTop: 8 }}>
                 You will be redirected automatically.

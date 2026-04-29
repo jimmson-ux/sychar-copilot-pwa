@@ -4,6 +4,7 @@ export const dynamic = 'force-dynamic'
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter }  from 'next/navigation'
 import Link from 'next/link'
+import BottomNav from '../_components/BottomNav'
 
 const G  = '#16a34a'
 const GL = '#15803d'
@@ -144,7 +145,7 @@ export default function ParentDashboardPage() {
   const totalOwed = Object.values(balances).reduce((s, b) => s + (b?.current_balance ?? 0), 0)
 
   return (
-    <div style={{ maxWidth: 480, margin: '0 auto', paddingBottom: 32 }}>
+    <div style={{ maxWidth: 480, margin: '0 auto', paddingBottom: 'calc(32px + 64px)' }}>
       {/* Header */}
       <div style={{ background: G, padding: '20px 20px 48px', color: 'white' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -244,6 +245,8 @@ export default function ParentDashboardPage() {
           </section>
         )}
       </div>
+
+      <BottomNav />
     </div>
   )
 }
