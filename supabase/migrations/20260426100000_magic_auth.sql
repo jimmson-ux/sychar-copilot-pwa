@@ -129,8 +129,8 @@ RETURNS TABLE(
   area_name     text
 ) AS $$
   SELECT
-    ROUND(AVG(s.home_lat)::numeric, 5)::double precision AS center_lat,
-    ROUND(AVG(s.home_lng)::numeric, 5)::double precision AS center_lng,
+    ROUND(CAST(AVG(s.home_lat) AS numeric), 5)::double precision AS center_lat,
+    ROUND(CAST(AVG(s.home_lng) AS numeric), 5)::double precision AS center_lng,
     COUNT(*)::integer AS student_count,
     COALESCE(SUM(fb.balance_due), 0) AS total_arrears,
     MODE() WITHIN GROUP (ORDER BY s.home_area) AS area_name
@@ -145,8 +145,8 @@ RETURNS TABLE(
     AND s.home_lng IS NOT NULL
     AND COALESCE(fb.balance_due, 0) > 0
   GROUP BY
-    ROUND(s.home_lat / 0.009, 0),   -- ~1 km buckets (0.009° ≈ 1 km)
-    ROUND(s.home_lng / 0.009, 0)
+    ROUND(CAST(s.home_lat / 0.009 AS numeric), 0),   -- ~1 km buckets (0.009° ≈ 1 km)
+    ROUND(CAST(s.home_lng / 0.009 AS numeric), 0)
   HAVING COALESCE(SUM(fb.balance_due), 0) > 5000
   ORDER BY total_arrears DESC;
 $$ LANGUAGE SQL SECURITY DEFINER;
@@ -163,10 +163,10 @@ RETURNS TABLE(
   SELECT
     s.id AS student_id,
     s.full_name AS student_name,
-    ROUND((public.postgis_distance_meters(
+    ROUND(CAST(public.postgis_distance_meters(
       s.home_lat, s.home_lng,
       COALESCE(tc.school_lat, 0), COALESCE(tc.school_lng, 0)
-    ) / 1000)::numeric, 1)::double precision AS distance_km,
+    ) / 1000 AS numeric), 1)::double precision AS distance_km,
     CASE
       WHEN public.postgis_distance_meters(s.home_lat, s.home_lng,
            COALESCE(tc.school_lat,0), COALESCE(tc.school_lng,0)) < 2000 THEN 'near'
@@ -190,7 +190,10 @@ RETURNS TABLE(
   WHERE s.school_id::text = p_school_id::text
     AND s.home_lat IS NOT NULL
     AND s.home_lng IS NOT NULL
-  ORDER BY distance_km DESC;
+  ORDER BY public.postgis_distance_meters(
+    s.home_lat, s.home_lng,
+    COALESCE(tc.school_lat, 0), COALESCE(tc.school_lng, 0)
+  ) DESC;
 $$ LANGUAGE SQL SECURITY DEFINER;
 
 -- ── GPS columns on nts_attendance_log ────────────────────────────────────────

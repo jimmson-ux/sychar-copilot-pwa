@@ -19,7 +19,9 @@ CREATE TABLE IF NOT EXISTS public.student_risk_scores (
   flags               jsonb   DEFAULT '[]',
   recommendations     jsonb   DEFAULT '[]',
   computed_at         timestamptz DEFAULT now(),
-  UNIQUE (student_id, DATE_TRUNC('week', computed_at))
+  -- ISO week start date — used for deduplication (one row per student per week)
+  computed_week       date    NOT NULL DEFAULT DATE_TRUNC('week', now())::date,
+  UNIQUE (student_id, computed_week)
 );
 
 CREATE INDEX IF NOT EXISTS idx_risk_school
@@ -68,7 +70,10 @@ DECLARE
   eng_score   numeric;
   v_prev_avg  numeric;
   v_curr_avg  numeric;
+  v_week      date;
 BEGIN
+  v_week := DATE_TRUNC('week', now())::date;
+
   FOR rec IN
     SELECT s.id, s.full_name, s.class_name
     FROM public.students s
@@ -163,14 +168,14 @@ BEGIN
       school_id, student_id, risk_probability, risk_tier,
       attendance_score, grade_trend_score, grade_volatility,
       discipline_score, engagement_score, flags, recommendations,
-      computed_at
+      computed_at, computed_week
     ) VALUES (
       p_school_id, rec.id, v_score / 100.0, v_tier,
       COALESCE(att_score,0), COALESCE(grade_score,0), COALESCE(vol_score,0),
       COALESCE(disc_score,0), COALESCE(eng_score,0),
-      v_flags, v_recs, now()
+      v_flags, v_recs, now(), v_week
     )
-    ON CONFLICT (student_id, DATE_TRUNC('week', computed_at))
+    ON CONFLICT (student_id, computed_week)
     DO UPDATE SET
       risk_probability  = EXCLUDED.risk_probability,
       risk_tier         = EXCLUDED.risk_tier,
@@ -211,17 +216,17 @@ CREATE TRIGGER trg_sentiment_discipline
   EXECUTE FUNCTION public.trigger_sentiment_analysis();
 
 -- ── Weekly cron (requires pg_cron extension — safe to skip if not enabled) ────
-DO $$
+DO $outer$
 BEGIN
   PERFORM cron.schedule(
     'weekly-risk-scores',
     '0 22 * * 0',
-    $$
+    $cron$
       SELECT public.compute_risk_scores(school_id)
       FROM public.tenant_configs
       WHERE subscription_status IN ('active','trial');
-    $$
+    $cron$
   );
 EXCEPTION WHEN OTHERS THEN
   RAISE NOTICE 'pg_cron not available — skip weekly risk cron: %', SQLERRM;
-END $$;
+END $outer$;
