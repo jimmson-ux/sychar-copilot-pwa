@@ -46,8 +46,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 
+  // Auto-generate slug from school name (first word, lowercased, collision-safe)
+  const { data: slug } = await serviceClient
+    .rpc('generate_slug_from_name', { p_name: school_name })
+  if (slug) {
+    await serviceClient
+      .from('tenant_configs')
+      .update({ slug })
+      .eq('school_id', schoolId)
+  }
+
   // Fetch the auto-generated short code for the welcome email
-  // school_id resolved dynamically from session
   const { data: tenant } = await serviceClient
     .from('tenant_configs')
     .select('school_short_code')
@@ -58,6 +67,8 @@ export async function POST(req: NextRequest) {
     {
       school_id:         schoolId,
       school_short_code: tenant?.school_short_code ?? null,
+      slug:              slug ?? null,
+      staff_pwa_url:     slug ? `https://${slug}.sychar.co.ke` : null,
     },
     { status: 201 }
   )

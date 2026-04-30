@@ -136,7 +136,12 @@ export default function ParentLoginPage() {
       localStorage.setItem('parent_token',       verifyData.token)
       localStorage.setItem('parent_school_id',   schoolId)
       localStorage.setItem('parent_student_ids', JSON.stringify(verifyData.student_ids))
-      router.replace('/parent/dashboard')
+
+      const consentRes = await fetch('/api/parent/consent', {
+        headers: { Authorization: `Bearer ${verifyData.token}` },
+      }).catch(() => null)
+      const { hasConsent } = (await consentRes?.json().catch(() => ({}))) ?? {}
+      router.replace(hasConsent ? '/parent/dashboard' : '/parent/consent')
     } catch {
       setError('Network error. Check your connection.')
       setLoading(false)

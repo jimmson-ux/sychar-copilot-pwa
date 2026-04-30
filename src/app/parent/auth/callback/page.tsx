@@ -84,7 +84,13 @@ function CallbackInner() {
       localStorage.setItem('parent_student_ids', JSON.stringify(json.student_ids))
       sessionStorage.removeItem('parent_google_school_code')
 
-      router.replace('/parent/dashboard')
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const jAny = json as any
+      const consentRes = await fetch('/api/parent/consent', {
+        headers: { Authorization: `Bearer ${jAny.token}` },
+      }).catch(() => null)
+      const consentJson = await consentRes?.json().catch(() => null) as { hasConsent?: boolean } | null
+      router.replace(consentJson?.hasConsent ? '/parent/dashboard' : '/parent/consent')
     }
 
     run()

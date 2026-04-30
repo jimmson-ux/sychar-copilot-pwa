@@ -11,7 +11,7 @@ export async function GET() {
 
   const [schoolsRes, configsRes, studentsRes, staffRes] = await Promise.all([
     db.from('schools').select('id, name, county, student_count, is_active, subscription_expires_at, features, created_at').order('name'),
-    db.from('tenant_configs').select('school_id, school_short_code'),
+    db.from('tenant_configs').select('school_id, school_short_code, slug'),
     db.from('students').select('school_id', { count: 'exact', head: false }).eq('is_active', true),
     db.from('staff_records').select('school_id', { count: 'exact', head: false }).eq('is_active', true),
   ])
@@ -20,10 +20,11 @@ export async function GET() {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 
-  type ConfigRow = { school_id: string; school_short_code: string | null }
+  type ConfigRow = { school_id: string; school_short_code: string | null; slug: string | null }
   type CountRow  = { school_id: string }
 
   const codeMap    = new Map((configsRes.data as ConfigRow[] ?? []).map(r => [r.school_id, r.school_short_code]))
+  const slugMap    = new Map((configsRes.data as ConfigRow[] ?? []).map(r => [r.school_id, r.slug]))
   const studentMap = new Map<string, number>()
   const staffMap   = new Map<string, number>()
 
@@ -49,6 +50,7 @@ export async function GET() {
       name:         s.name,
       county:       s.county,
       shortCode:    codeMap.get(s.id) ?? null,
+      slug:         slugMap.get(s.id) ?? null,
       studentCount: studentMap.get(s.id) ?? s.student_count,
       staffCount:   staffMap.get(s.id) ?? 0,
       isActive:     s.is_active,

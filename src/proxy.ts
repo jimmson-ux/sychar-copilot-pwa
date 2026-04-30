@@ -2,12 +2,20 @@
  * Next.js 16 proxy (replaces middleware.ts).
  * File: proxy.ts  |  Export: proxy()  |  Config: proxyConfig
  *
- * Auth strategy (Edge-safe — no DB calls, no @supabase/ssr):
+ * Auth strategy (no DB calls — all cookie-based for speed):
  *   - Session gate : reads Supabase auth cookie directly
  *   - Role routing : reads `sychar-role` cookie (set by /login after sign-in)
  *   - Subscription : reads `sychar-sub` cookie  (set by /login; defaults 'active')
  *
- * The role/sub cookies are routing hints only — not a security boundary.
+ * Tenant resolution (subdomain → school_id):
+ *   - Extracts slug from subdomain: nkoroi.sychar.co.ke → 'nkoroi'
+ *   - Fetches tenant_configs via Supabase REST (Cloudflare-cached 5 min)
+ *   - Injects x-school-id, x-school-slug, x-school-name, x-school-short-code headers
+ *
+ * Parent PWA (/parent/*, /api/parent/*) — always passes through.
+ * Parent JWT is verified per-route by requireParentAuth().
+ *
+ * Role/sub cookies are routing hints only — not a security boundary.
  * Actual authorization is enforced by RLS + requireAuth() in every API route.
  */
 
@@ -20,15 +28,14 @@ const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? ''
 const PROJECT_REF  = SUPABASE_URL.replace('https://', '').split('.')[0]
 const AUTH_COOKIE  = `sb-${PROJECT_REF}-auth-token`
 
-const ROLE_COOKIE = 'sychar-role'  // sub_role from staff_records
-const SUB_COOKIE  = 'sychar-sub'   // school subscription status
+const ROLE_COOKIE = 'sychar-role'
+const SUB_COOKIE  = 'sychar-sub'
 
 const PUBLIC_ROUTES = [
   '/login', '/auth', '/quick-report', '/super/login',
   '/talk', '/loc-verify', '/suspended', '/offline', '/record',
 ]
 
-// Shared utility pages any authenticated staff member may access
 const SHARED_DASHBOARD_PREFIXES = [
   '/dashboard/students',
   '/dashboard/settings',
@@ -36,7 +43,6 @@ const SHARED_DASHBOARD_PREFIXES = [
   '/dashboard/notices',
 ]
 
-// school_id resolved dynamically from session
 const ROLE_ROUTES: Record<string, string> = {
   'principal':                   '/dashboard/principal',
   'deputy_principal_academic':   '/dashboard/deputy-academic',
@@ -83,7 +89,7 @@ function hasSession(req: NextRequest): boolean {
       c => c.name.includes(PROJECT_REF) && c.name.includes('auth-token') && !!c.value
     )
   } catch {
-    return true  // permissive on parse error; dashboard re-validates via requireAuth()
+    return true
   }
 }
 
@@ -94,13 +100,57 @@ function dashboardFor(subRole: string): string {
   return ROLE_ROUTES[subRole] ?? '/dashboard/teacher'
 }
 
+// Extract school slug from subdomain: nkoroi.sychar.co.ke → 'nkoroi'
+function extractSlug(req: NextRequest): string | null {
+  const host  = (req.headers.get('host') ?? '').split(':')[0]
+  const parts = host.split('.')
+  // Dev: next.config.ts injects x-school-slug header for localhost
+  const devSlug = req.headers.get('x-school-slug')
+  if (parts.length >= 4) {
+    const sub      = parts[0]
+    const reserved = new Set(['www', 'admin', 'api', 'wazazi', 'mail'])
+    if (!reserved.has(sub)) return sub
+  }
+  return devSlug ?? null
+}
+
+async function resolveTenant(slug: string): Promise<Record<string, string> | null> {
+  const supabaseAnon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ''
+  if (!SUPABASE_URL || !supabaseAnon) return null
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/tenant_configs?slug=eq.${encodeURIComponent(slug)}&select=school_id,name,slug,school_short_code&limit=1`,
+      {
+        headers: { apikey: supabaseAnon, Authorization: `Bearer ${supabaseAnon}` },
+        // @ts-ignore cf is Cloudflare-specific (not in standard RequestInit)
+        cf: { cacheTtl: 300, cacheEverything: true },
+      }
+    )
+    if (!res.ok) return null
+    const tenants = await res.json() as Record<string, string>[]
+    return tenants[0] ?? null
+  } catch {
+    return null
+  }
+}
+
+// Inject extra headers into both the forwarded request and the response
+function withHeaders(req: NextRequest, extra: Record<string, string>): NextResponse {
+  if (!Object.keys(extra).length) return NextResponse.next()
+  const reqHeaders = new Headers(req.headers)
+  Object.entries(extra).forEach(([k, v]) => reqHeaders.set(k, v))
+  const res = NextResponse.next({ request: { headers: reqHeaders } })
+  Object.entries(extra).forEach(([k, v]) => res.headers.set(k, v))
+  return res
+}
+
 // ── Proxy ─────────────────────────────────────────────────────────────────────
 
-export function proxy(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   try {
     const { pathname } = request.nextUrl
 
-    // Static assets — pass through immediately
+    // 1. Static assets — pass through immediately (no tenant resolution needed)
     if (
       pathname.startsWith('/_next/') ||
       pathname.startsWith('/favicon') ||
@@ -109,54 +159,75 @@ export function proxy(request: NextRequest) {
       return NextResponse.next()
     }
 
+    // 2. Tenant resolution from subdomain slug
+    const slug         = extractSlug(request)
+    const extraHeaders: Record<string, string> = {}
+
+    if (slug) {
+      const tenant = await resolveTenant(slug)
+      if (tenant) {
+        extraHeaders['x-school-id']         = tenant.school_id         ?? ''
+        extraHeaders['x-school-slug']       = tenant.slug              ?? ''
+        extraHeaders['x-school-name']       = tenant.name              ?? ''
+        extraHeaders['x-school-short-code'] = tenant.school_short_code ?? ''
+      } else if (!pathname.startsWith('/api/') && !pathname.startsWith('/parent/')) {
+        // Unknown subdomain → redirect to marketing site
+        return NextResponse.redirect(new URL('https://sychar.co.ke'))
+      }
+    }
+
+    // 3. Parent PWA — always pass through (JWT verified per-route)
+    if (pathname.startsWith('/parent/') || pathname.startsWith('/api/parent/')) {
+      return withHeaders(request, extraHeaders)
+    }
+
+    // 4. Public paths
     const loggedIn  = hasSession(request)
     const subRole   = request.cookies.get(ROLE_COOKIE)?.value ?? ''
     const subStatus = request.cookies.get(SUB_COOKIE)?.value  ?? 'active'
 
-    // ── Public paths ─────────────────────────────────────────
     if (isPublicPath(pathname)) {
-      // Authenticated users visiting /login → send to their dashboard
       if (loggedIn && subRole && pathname === '/login') {
         return NextResponse.redirect(new URL(dashboardFor(subRole), request.url))
       }
-      return NextResponse.next()
+      return withHeaders(request, extraHeaders)
     }
 
-    // ── API routes — auth handled by requireAuth() in each handler ─
+    // 5. API routes — auth handled by requireAuth() in each handler
     if (pathname.startsWith('/api/')) {
-      return NextResponse.next()
+      return withHeaders(request, extraHeaders)
     }
 
-    // ── Unauthenticated → /login ──────────────────────────────
+    // 6. Unauthenticated → /login
     if (!loggedIn) {
       const url = new URL('/login', request.url)
       url.searchParams.set('next', pathname)
+      if (slug) url.searchParams.set('school', slug)
       return NextResponse.redirect(url)
     }
 
-    // ── Frozen / suspended → /suspended ──────────────────────
+    // 7. Frozen / suspended → /suspended
     if (subStatus === 'suspended' || subStatus === 'frozen') {
-      // Principal can reach their dashboard to see payment/reinstatement options
       if (subRole === 'principal' && pathname.startsWith('/dashboard/principal')) {
-        return NextResponse.next()
+        return withHeaders(request, extraHeaders)
       }
       return NextResponse.redirect(new URL('/suspended', request.url))
     }
 
-    // ── /super/* — super_admin only ───────────────────────────
+    // 8. /super/* — super_admin only
     if (pathname.startsWith('/super/')) {
       if (subRole !== 'super_admin') {
         return NextResponse.redirect(new URL(subRole ? dashboardFor(subRole) : '/login', request.url))
       }
-      return NextResponse.next()
+      return withHeaders(request, extraHeaders)
     }
 
-    // ── /dashboard root → role-based entry redirect ───────────
+    // 9. /dashboard root → role-based entry redirect
     if (pathname === '/dashboard' || pathname === '/dashboard/') {
       return NextResponse.redirect(new URL(subRole ? dashboardFor(subRole) : '/login', request.url))
     }
 
-    // ── /dashboard/* — prevent accessing another role's dashboard ─
+    // 10. /dashboard/* — prevent cross-role access
     if (pathname.startsWith('/dashboard/') && subRole) {
       const correctDashboard = dashboardFor(subRole)
       const isOwn    = pathname.startsWith(correctDashboard)
@@ -168,12 +239,13 @@ export function proxy(request: NextRequest) {
       }
     }
 
-    // ── Grace period → pass through with banner header ───────
-    const res = NextResponse.next()
+    // 11. Grace period → pass through with banner header
+    const res = withHeaders(request, extraHeaders)
     if (subStatus === 'grace_period') {
       res.headers.set('x-subscription-status', 'grace_period')
     }
     return res
+
   } catch (err) {
     console.error('[proxy] error:', err)
     return NextResponse.next()

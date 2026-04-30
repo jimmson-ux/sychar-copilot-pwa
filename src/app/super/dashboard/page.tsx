@@ -11,7 +11,7 @@ const C = {
 const MONO = '"JetBrains Mono", monospace'
 
 type School = {
-  id: string; name: string; county: string; shortCode: string | null
+  id: string; name: string; county: string; shortCode: string | null; slug: string | null
   studentCount: number; staffCount: number; isActive: boolean
   daysLeft: number; addons: number; health: 'green' | 'amber' | 'red'; createdAt: string
   features: Record<string, boolean>
@@ -114,7 +114,7 @@ export default function CommandCentrePage() {
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
           <thead>
             <tr style={{ borderBottom: `1px solid ${C.border}` }}>
-              {['Health', 'School', 'Code', 'County', 'Students', 'Staff', 'Add-ons', 'Expires', 'Actions'].map(h => (
+              {['Health', 'School', 'Code', 'URL', 'County', 'Students', 'Staff', 'Add-ons', 'Expires', 'Actions'].map(h => (
                 <th key={h} style={{ padding: '10px 14px', textAlign: 'left', fontFamily: MONO, fontSize: 9, letterSpacing: '0.1em', color: C.muted, textTransform: 'uppercase', fontWeight: 500, whiteSpace: 'nowrap' }}>{h}</th>
               ))}
             </tr>
@@ -145,6 +145,12 @@ export default function CommandCentrePage() {
                     }}
                   >↺</button>
                 </td>
+                <td style={{ padding: '11px 14px' }}>
+                  {s.slug
+                    ? <a href={`https://${s.slug}.sychar.co.ke`} target="_blank" rel="noopener noreferrer" style={{ fontFamily: MONO, fontSize: 10, color: C.blue, textDecoration: 'none' }}>{s.slug}.sychar.co.ke</a>
+                    : <span style={{ color: C.muted, fontSize: 10 }}>—</span>
+                  }
+                </td>
                 <td style={{ padding: '11px 14px', color: C.muted }}>{s.county ?? '—'}</td>
                 <td style={{ padding: '11px 14px', color: C.text }}>{s.studentCount.toLocaleString()}</td>
                 <td style={{ padding: '11px 14px', color: C.text }}>{s.staffCount}</td>
@@ -159,7 +165,7 @@ export default function CommandCentrePage() {
               </tr>
             ))}
             {visible.length === 0 && (
-              <tr><td colSpan={9} style={{ padding: 40, textAlign: 'center', color: C.muted, fontSize: 12 }}>No schools match filter.</td></tr>
+              <tr><td colSpan={10} style={{ padding: 40, textAlign: 'center', color: C.muted, fontSize: 12 }}>No schools match filter.</td></tr>
             )}
           </tbody>
         </table>
