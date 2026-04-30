@@ -29,6 +29,23 @@ CREATE TABLE IF NOT EXISTS student_wallets (
   CONSTRAINT wallet_balance_non_negative CHECK (balance_kes >= 0)
 );
 
+-- Ensure all columns exist (idempotent — handles pre-existing table with partial schema)
+ALTER TABLE student_wallets
+  ADD COLUMN IF NOT EXISTS school_id       uuid,
+  ADD COLUMN IF NOT EXISTS student_id      uuid,
+  ADD COLUMN IF NOT EXISTS student_name    text,
+  ADD COLUMN IF NOT EXISTS admission_no    text,
+  ADD COLUMN IF NOT EXISTS class_name      text,
+  ADD COLUMN IF NOT EXISTS balance_kes     numeric(10,2) DEFAULT 0.00,
+  ADD COLUMN IF NOT EXISTS daily_limit_kes numeric(10,2) DEFAULT 200.00,
+  ADD COLUMN IF NOT EXISTS today_spent_kes numeric(10,2) DEFAULT 0.00,
+  ADD COLUMN IF NOT EXISTS is_frozen       boolean DEFAULT false,
+  ADD COLUMN IF NOT EXISTS frozen_by       text,
+  ADD COLUMN IF NOT EXISTS frozen_at       timestamptz,
+  ADD COLUMN IF NOT EXISTS freeze_reason   text,
+  ADD COLUMN IF NOT EXISTS created_at      timestamptz DEFAULT now(),
+  ADD COLUMN IF NOT EXISTS updated_at      timestamptz DEFAULT now();
+
 CREATE INDEX IF NOT EXISTS idx_wallets_school   ON student_wallets(school_id);
 CREATE INDEX IF NOT EXISTS idx_wallets_student  ON student_wallets(student_id);
 
@@ -82,6 +99,29 @@ CREATE TABLE IF NOT EXISTS student_vouchers (
   updated_at      timestamptz DEFAULT now(),
   UNIQUE(school_id, student_id, item_type, valid_from)
 );
+
+-- Ensure all columns exist (idempotent)
+ALTER TABLE student_vouchers
+  ADD COLUMN IF NOT EXISTS school_id          uuid,
+  ADD COLUMN IF NOT EXISTS student_id         uuid,
+  ADD COLUMN IF NOT EXISTS student_name       text,
+  ADD COLUMN IF NOT EXISTS admission_no       text,
+  ADD COLUMN IF NOT EXISTS item_type          text,
+  ADD COLUMN IF NOT EXISTS item_label         text,
+  ADD COLUMN IF NOT EXISTS unit_label         text DEFAULT 'piece',
+  ADD COLUMN IF NOT EXISTS qty_remaining      integer DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS qty_issued         integer DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS qty_used           integer DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS valid_from         date DEFAULT CURRENT_DATE,
+  ADD COLUMN IF NOT EXISTS valid_until        date,
+  ADD COLUMN IF NOT EXISTS token_hash         text,
+  ADD COLUMN IF NOT EXISTS token_payload      jsonb DEFAULT '{}',
+  ADD COLUMN IF NOT EXISTS qr_data            text,
+  ADD COLUMN IF NOT EXISTS low_qty_threshold  integer DEFAULT 2,
+  ADD COLUMN IF NOT EXISTS low_alert_sent     boolean DEFAULT false,
+  ADD COLUMN IF NOT EXISTS is_active          boolean DEFAULT true,
+  ADD COLUMN IF NOT EXISTS created_at         timestamptz DEFAULT now(),
+  ADD COLUMN IF NOT EXISTS updated_at         timestamptz DEFAULT now();
 
 CREATE INDEX IF NOT EXISTS idx_vouchers_student ON student_vouchers(student_id, item_type, valid_until DESC);
 CREATE INDEX IF NOT EXISTS idx_vouchers_active  ON student_vouchers(school_id, item_type, valid_until) WHERE is_active = true;
@@ -137,6 +177,32 @@ CREATE TABLE IF NOT EXISTS wallet_transactions (
   internal_note   text,
   created_at      timestamptz DEFAULT now() NOT NULL
 );
+
+-- Ensure all columns exist (idempotent — this is the key fix for pre-existing tables)
+ALTER TABLE wallet_transactions
+  ADD COLUMN IF NOT EXISTS school_id         uuid,
+  ADD COLUMN IF NOT EXISTS student_id        uuid,
+  ADD COLUMN IF NOT EXISTS student_name      text,
+  ADD COLUMN IF NOT EXISTS admission_no      text,
+  ADD COLUMN IF NOT EXISTS ledger            text,
+  ADD COLUMN IF NOT EXISTS direction         text,
+  ADD COLUMN IF NOT EXISTS amount_kes        numeric(10,2),
+  ADD COLUMN IF NOT EXISTS qty               integer,
+  ADD COLUMN IF NOT EXISTS item_type         text,
+  ADD COLUMN IF NOT EXISTS wallet_id         uuid,
+  ADD COLUMN IF NOT EXISTS voucher_id        uuid,
+  ADD COLUMN IF NOT EXISTS balance_after_kes numeric(10,2),
+  ADD COLUMN IF NOT EXISTS qty_after         integer,
+  ADD COLUMN IF NOT EXISTS tx_type           text,
+  ADD COLUMN IF NOT EXISTS mpesa_ref         text,
+  ADD COLUMN IF NOT EXISTS payment_method    text,
+  ADD COLUMN IF NOT EXISTS authorised_by     text,
+  ADD COLUMN IF NOT EXISTS auth_method       text,
+  ADD COLUMN IF NOT EXISTS pos_location      text,
+  ADD COLUMN IF NOT EXISTS pos_staff_id      text,
+  ADD COLUMN IF NOT EXISTS description       text,
+  ADD COLUMN IF NOT EXISTS internal_note     text,
+  ADD COLUMN IF NOT EXISTS created_at        timestamptz DEFAULT now();
 
 CREATE INDEX IF NOT EXISTS idx_tx_student    ON wallet_transactions(student_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_tx_wallet     ON wallet_transactions(wallet_id, created_at DESC);
@@ -296,6 +362,9 @@ CREATE TRIGGER trg_voucher_tx
 
 
 -- ── TRIGGER 3: Reset today_spent at midnight EAT ──────────────
+SELECT cron.unschedule('wallet-daily-reset') WHERE EXISTS (
+  SELECT 1 FROM cron.job WHERE jobname = 'wallet-daily-reset'
+);
 SELECT cron.schedule(
   'wallet-daily-reset',
   '0 21 * * *',
