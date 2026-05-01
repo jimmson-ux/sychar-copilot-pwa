@@ -16,7 +16,7 @@ const nextConfig: NextConfig = {
   // Pre-existing req.json() → unknown strict-TS errors across the codebase.
   // Type safety is enforced at the DB boundary (RLS + runtime validation).
   typescript: { ignoreBuildErrors: true },
-  eslint:     { ignoreDuringBuilds: true },
+  // eslint: ignoreDuringBuilds removed — not a valid NextConfig key in Next.js 15+
 
   // Silence workspace root warning
   turbopack: {

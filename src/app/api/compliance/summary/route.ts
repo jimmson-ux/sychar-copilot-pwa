@@ -12,7 +12,10 @@ function svc() {
   return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
 }
 
-const ALLOWED = new Set(['principal', 'deputy_principal', 'deputy_principal_academics', 'dean_of_studies'])
+const ALLOWED = new Set([
+  'principal', 'deputy_principal', 'deputy_principal_academics',
+  'dean_of_studies', 'deputy_dean_of_studies', 'qaso',
+])
 
 export async function GET(req: NextRequest) {
   const auth = await requireAuth()
@@ -47,9 +50,12 @@ export async function GET(req: NextRequest) {
     .eq('school_id', auth.schoolId!)
     .eq('is_active', true)
     .in('sub_role', [
-      'teacher', 'senior_teacher', 'hod', 'deputy_hod',
+      'class_teacher', 'subject_teacher', 'form_teacher',
+      'form_principal_form4', 'form_principal_grade10',
+      'hod_sciences', 'hod_mathematics', 'hod_languages',
+      'hod_humanities', 'hod_applied_sciences', 'hod_games_sports',
       'dean_of_studies', 'deputy_dean_of_studies',
-      'form_teacher', 'class_teacher',
+      'teacher', 'senior_teacher', 'hod', 'deputy_hod',
     ])
     .order('full_name')
 
@@ -84,5 +90,14 @@ export async function GET(req: NextRequest) {
     }
   })
 
-  return NextResponse.json({ teachers, term, year })
+  const green  = teachers.filter(t => t.traffic_light === 'green').length
+  const amber  = teachers.filter(t => t.traffic_light === 'amber').length
+  const red    = teachers.filter(t => t.traffic_light === 'red').length
+
+  return NextResponse.json({
+    teachers,
+    summary: { green, amber, red, total: teachers.length },
+    term,
+    year,
+  })
 }

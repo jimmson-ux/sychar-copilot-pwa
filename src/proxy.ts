@@ -41,34 +41,58 @@ const SHARED_DASHBOARD_PREFIXES = [
   '/dashboard/settings',
   '/dashboard/scanner',
   '/dashboard/notices',
+  '/dashboard/attendance',
+  '/dashboard/discipline',
+  '/dashboard/timetable',
+  '/dashboard/merit-list',
+  '/dashboard/qr-management',
+  '/dashboard/document-compliance',
+  '/dashboard/university-matching',
+  '/dashboard/subject-performance',
 ]
 
 const ROLE_ROUTES: Record<string, string> = {
+  // ── Principal ──────────────────────────────────────────────────────
   'principal':                   '/dashboard/principal',
+  // ── Deputy principal — Nkoroi uses flat 'deputy_principal' ─────────
+  'deputy_principal':            '/dashboard/deputy',
   'deputy_principal_academic':   '/dashboard/deputy-academic',
   'deputy_principal_academics':  '/dashboard/deputy-academic',
   'deputy_principal_admin':      '/dashboard/deputy-admin',
   'deputy_principal_discipline': '/dashboard/deputy-admin',
+  // ── Academic leadership ────────────────────────────────────────────
   'dean_of_studies':             '/dashboard/dean',
   'deputy_dean_of_studies':      '/dashboard/dean',
-  'dean_of_students':            '/dashboard/dean',
+  'dean_of_students':            '/dashboard/dean-students',
+  // ── HODs ───────────────────────────────────────────────────────────
   'hod_sciences':                '/dashboard/hod',
-  'hod_arts':                    '/dashboard/hod',
-  'hod_languages':               '/dashboard/hod',
   'hod_mathematics':             '/dashboard/hod',
+  'hod_languages':               '/dashboard/hod',
+  'hod_humanities':              '/dashboard/hod',
+  'hod_applied_sciences':        '/dashboard/hod',
+  'hod_games_sports':            '/dashboard/hod',
+  'hod_arts':                    '/dashboard/hod',
   'hod_social_sciences':         '/dashboard/hod',
   'hod_technical':               '/dashboard/hod',
   'hod_pathways':                '/dashboard/hod',
+  // ── Finance / admin ────────────────────────────────────────────────
   'bursar':                      '/dashboard/bursar',
   'accountant':                  '/dashboard/bursar',
   'storekeeper':                 '/dashboard/storekeeper',
+  // ── Welfare / specialist ──────────────────────────────────────────
   'school_nurse':                '/dashboard/nurse',
+  'guidance_counselling':        '/dashboard/counselor',
+  'counselor':                   '/dashboard/counselor',
+  'qaso':                        '/dashboard/qaso',
+  // ── Teachers ──────────────────────────────────────────────────────
   'class_teacher':               '/dashboard/teacher',
   'subject_teacher':             '/dashboard/teacher',
+  'form_principal_form4':        '/dashboard/teacher',
+  'form_principal_grade10':      '/dashboard/teacher',
   'bom_teacher':                 '/dashboard/teacher',
-  'counselor':                   '/dashboard/counselor',
-  'librarian':                   '/dashboard/librarian',
   'quality_assurance':           '/dashboard/teacher',
+  // ── Other ─────────────────────────────────────────────────────────
+  'librarian':                   '/dashboard/librarian',
   'super_admin':                 '/super/dashboard',
 }
 
@@ -94,9 +118,11 @@ function hasSession(req: NextRequest): boolean {
 }
 
 function dashboardFor(subRole: string): string {
-  if (subRole === 'super_admin') return '/super/dashboard'
-  if (subRole.startsWith('hod_')) return '/dashboard/hod'
-  if (subRole.startsWith('deputy_principal')) return '/dashboard/deputy-admin'
+  if (subRole === 'super_admin')      return '/super/dashboard'
+  if (subRole === 'deputy_principal') return '/dashboard/deputy'
+  if (subRole.startsWith('hod_'))     return '/dashboard/hod'
+  // deputy_principal_* variants (not the bare deputy_principal handled above)
+  if (subRole.startsWith('deputy_principal_')) return '/dashboard/deputy-admin'
   return ROLE_ROUTES[subRole] ?? '/dashboard/teacher'
 }
 
