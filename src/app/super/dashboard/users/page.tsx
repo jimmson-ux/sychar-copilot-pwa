@@ -57,6 +57,18 @@ export default function UsersPage() {
     if (r.ok) { flash('Role updated'); load(page) } else flash('Failed')
   }
 
+  async function emergencyOTP(userId: string) {
+    setBusy(userId)
+    const r = await fetch(`/api/super/users/${userId}/emergency-otp`, { method: 'POST' })
+    setBusy(null)
+    if (r.ok) {
+      const d = await r.json() as { otp?: string }
+      if (d.otp) alert(`Emergency OTP (valid 5 min — read to staff, do not share):\n\n${d.otp}`)
+    } else {
+      flash('Failed to generate OTP')
+    }
+  }
+
   const totalPages = Math.ceil(total / 50)
 
   return (
@@ -109,6 +121,7 @@ export default function UsersPage() {
                       <button onClick={() => changeRole(u.userId)} disabled={busy === u.userId} style={{ fontSize: 9, padding: '3px 8px', borderRadius: 4, cursor: 'pointer', border: `1px solid ${C.amber}`, background: C.amber + '15', color: C.amber, fontFamily: MONO, opacity: busy === u.userId ? 0.5 : 1 }}>Role</button>
                       {u.isActive && <button onClick={() => action(`/api/super/users/${u.userId}/suspend`, u.userId)} disabled={busy === u.userId} style={{ fontSize: 9, padding: '3px 8px', borderRadius: 4, cursor: 'pointer', border: `1px solid ${C.red}`, background: C.red + '15', color: C.red, fontFamily: MONO, opacity: busy === u.userId ? 0.5 : 1 }}>Suspend</button>}
                       <button onClick={() => action(`/api/super/users/${u.userId}/revoke-sessions`, u.userId)} disabled={busy === u.userId} style={{ fontSize: 9, padding: '3px 8px', borderRadius: 4, cursor: 'pointer', border: `1px solid ${C.red}`, background: C.red + '10', color: C.red, fontFamily: MONO, opacity: busy === u.userId ? 0.5 : 1 }}>Revoke</button>
+                      <button onClick={() => emergencyOTP(u.userId)} disabled={busy === u.userId} style={{ fontSize: 9, padding: '3px 8px', borderRadius: 4, cursor: 'pointer', border: '1px solid #f97316', background: '#f9731615', color: '#f97316', fontFamily: MONO, opacity: busy === u.userId ? 0.5 : 1 }}>OTP</button>
                     </div>
                   </td>
                 </tr>

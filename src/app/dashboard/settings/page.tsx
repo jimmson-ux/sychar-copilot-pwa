@@ -6,6 +6,175 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useSchoolId } from '@/hooks/useSchoolId'
 
+// ── Security card: TOTP setup + push subscription ─────────────────────────────
+function SecurityCard() {
+  const [totpState,   setTotpState]   = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
+  const [qrUrl,       setQrUrl]       = useState<string | null>(null)
+  const [totpSecret,  setTotpSecret]  = useState<string | null>(null)
+  const [pushState,   setPushState]   = useState<'idle' | 'requesting' | 'done' | 'denied' | 'error'>('idle')
+
+  async function setupTOTP() {
+    setTotpState('loading')
+    const r = await fetch('/api/auth/totp/setup', { method: 'POST' }).catch(() => null)
+    if (!r || !r.ok) { setTotpState('error'); return }
+    const d = await r.json() as { qrCodeUrl?: string; secret?: string }
+    setQrUrl(d.qrCodeUrl ?? null)
+    setTotpSecret(d.secret ?? null)
+    setTotpState('done')
+  }
+
+  async function registerPush() {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      setPushState('error'); return
+    }
+    setPushState('requesting')
+    try {
+      const perm = await Notification.requestPermission()
+      if (perm !== 'granted') { setPushState('denied'); return }
+
+      const reg = await navigator.serviceWorker.ready
+      const keyRes = await fetch('/api/auth/push/subscribe')
+      const { vapidPublicKey } = await keyRes.json() as { vapidPublicKey: string }
+      if (!vapidPublicKey) { setPushState('error'); return }
+
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
+      })
+
+      const res = await fetch('/api/auth/push/subscribe', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ subscription: sub.toJSON() }),
+      })
+      setPushState(res.ok ? 'done' : 'error')
+    } catch {
+      setPushState('error')
+    }
+  }
+
+  return (
+    <div style={{ background: 'white', borderRadius: 18, border: '1px solid #e5e7eb', overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
+      <div style={{ padding: '16px 24px', borderBottom: '1px solid #fef9c3', background: '#fefce8' }}>
+        <h2 style={{ fontWeight: 700, color: '#1f2937', margin: 0, fontSize: 15, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span>🔒</span> Account Security
+        </h2>
+        <p style={{ fontSize: 12, color: '#6b7280', margin: '3px 0 0' }}>
+          Passwordless login methods — TOTP authenticator &amp; push approval
+        </p>
+      </div>
+
+      <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+        {/* TOTP Section */}
+        <div>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+            <div>
+              <p style={{ fontSize: 13, fontWeight: 600, color: '#111827', margin: 0 }}>Authenticator App (TOTP)</p>
+              <p style={{ fontSize: 12, color: '#6b7280', margin: '3px 0 0' }}>
+                Set up Google Authenticator or Authy for 2FA login.
+              </p>
+            </div>
+            <button
+              onClick={setupTOTP}
+              disabled={totpState === 'loading'}
+              style={{
+                flexShrink: 0, padding: '8px 14px', border: 'none', borderRadius: 8,
+                background: totpState === 'done' ? '#16a34a' : '#1e40af',
+                color: 'white', fontSize: 12, fontWeight: 600, cursor: totpState === 'loading' ? 'not-allowed' : 'pointer',
+                opacity: totpState === 'loading' ? 0.7 : 1,
+              }}
+            >
+              {totpState === 'loading' ? 'Generating…'
+                : totpState === 'done' ? '✓ Done'
+                : 'Set Up TOTP'}
+            </button>
+          </div>
+
+          {totpState === 'error' && (
+            <p style={{ fontSize: 12, color: '#dc2626', marginTop: 8 }}>Failed to generate TOTP. Please try again.</p>
+          )}
+
+          {totpState === 'done' && qrUrl && (
+            <div style={{ marginTop: 14, padding: 14, background: '#f8fafc', borderRadius: 12, border: '1px solid #e5e7eb' }}>
+              <p style={{ fontSize: 12, color: '#374151', margin: '0 0 10px', fontWeight: 600 }}>
+                Scan this QR code in Google Authenticator or Authy:
+              </p>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(qrUrl)}`}
+                alt="TOTP QR code"
+                style={{ width: 180, height: 180, display: 'block', marginBottom: 10 }}
+              />
+              {totpSecret && (
+                <div>
+                  <p style={{ fontSize: 11, color: '#6b7280', margin: '0 0 4px' }}>Manual entry code:</p>
+                  <code style={{ fontSize: 12, background: '#f3f4f6', padding: '4px 8px', borderRadius: 6, letterSpacing: 2, userSelect: 'all' }}>
+                    {totpSecret}
+                  </code>
+                </div>
+              )}
+              <p style={{ fontSize: 11, color: '#9ca3af', marginTop: 10, margin: '10px 0 0' }}>
+                After scanning, test the code at <a href="/totp" style={{ color: '#1e40af' }}>/totp</a>. Your secret is now saved.
+              </p>
+            </div>
+          )}
+        </div>
+
+        <div style={{ borderTop: '1px solid #f3f4f6' }} />
+
+        {/* Push Section */}
+        <div>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+            <div>
+              <p style={{ fontSize: 13, fontWeight: 600, color: '#111827', margin: 0 }}>Magic Push Approval</p>
+              <p style={{ fontSize: 12, color: '#6b7280', margin: '3px 0 0' }}>
+                Register this device to approve login requests from other devices via push notification.
+              </p>
+            </div>
+            <button
+              onClick={registerPush}
+              disabled={pushState === 'requesting'}
+              style={{
+                flexShrink: 0, padding: '8px 14px', border: 'none', borderRadius: 8,
+                background: pushState === 'done' ? '#16a34a' : pushState === 'denied' ? '#dc2626' : '#7c3aed',
+                color: 'white', fontSize: 12, fontWeight: 600, cursor: pushState === 'requesting' ? 'not-allowed' : 'pointer',
+                opacity: pushState === 'requesting' ? 0.7 : 1,
+              }}
+            >
+              {pushState === 'requesting' ? 'Enabling…'
+                : pushState === 'done'    ? '✓ Registered'
+                : pushState === 'denied'  ? 'Permission denied'
+                : 'Enable Push'}
+            </button>
+          </div>
+          {pushState === 'denied' && (
+            <p style={{ fontSize: 12, color: '#dc2626', marginTop: 8 }}>
+              Browser blocked notifications. Open browser settings to allow notifications for this site.
+            </p>
+          )}
+          {pushState === 'error' && (
+            <p style={{ fontSize: 12, color: '#dc2626', marginTop: 8 }}>Failed to register. Ensure this device supports push notifications.</p>
+          )}
+          {pushState === 'done' && (
+            <p style={{ fontSize: 12, color: '#16a34a', marginTop: 8 }}>
+              ✓ This device will now receive login approval requests.
+            </p>
+          )}
+        </div>
+
+      </div>
+    </div>
+  )
+}
+
+function urlBase64ToUint8Array(base64String: string): Uint8Array {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
+  const base64  = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/')
+  const raw     = atob(base64)
+  return Uint8Array.from([...raw].map(c => c.charCodeAt(0)))
+}
+
 interface WelfareSettings {
   shareWellnessNudgesWithParents: boolean
   welfareVisibleToDeanStudents: boolean
@@ -253,6 +422,9 @@ export default function SettingsPage() {
                 </button>
               </div>
             </div>
+            {/* Security Card */}
+            <SecurityCard />
+
           </div>
 
           {/* RIGHT COLUMN */}
