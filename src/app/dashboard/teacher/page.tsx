@@ -602,6 +602,18 @@ export default function TeacherDashboardPage() {
             ))}
           </div>
 
+          {/* QR Lesson Check-in quick action */}
+          <div style={{ display: 'flex', gap: 10 }}>
+            <a href="/dashboard/teacher/lesson-checkin" style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 12, padding: '14px 18px', background: 'linear-gradient(135deg,#1d4ed8,#059669)', color: 'white', borderRadius: 14, textDecoration: 'none', boxShadow: '0 2px 8px rgba(29,78,216,0.25)' }}>
+              <span style={{ fontSize: 24 }}>📷</span>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 800 }}>QR Lesson Check-in</div>
+                <div style={{ fontSize: 11, opacity: 0.8, marginTop: 2 }}>Scan student QR codes &amp; take lesson attendance</div>
+              </div>
+              <span style={{ marginLeft: 'auto', fontSize: 18, opacity: 0.7 }}>›</span>
+            </a>
+          </div>
+
           {/* Timetable strip */}
           {(data?.timetable.length ?? 0) > 0 && (
             <div style={CARD}>

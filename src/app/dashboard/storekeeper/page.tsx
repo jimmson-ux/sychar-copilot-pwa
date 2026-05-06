@@ -2,18 +2,24 @@
 export const dynamic = 'force-dynamic'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { createClient } from '@supabase/supabase-js'
 
 interface Item { id: string; name: string; unit: string; category: string; current_stock: number; min_stock: number; reorder_point: number }
 interface BurnRate { item_id: string; name: string; unit: string; current_stock: number; avg_daily_7d: number; days_remaining: number | null; alert: boolean; anomaly_flag: boolean }
 interface LogEntry { id: string; transaction_type: string; quantity_before: number; quantity_change: number; quantity_after: number; issued_to: string | null; notes: string | null; server_timestamp: string; geo_verified: boolean }
 interface AieForm { id: string; form_number: string; requested_by: string; department: string; total_amount: number; status: string }
+interface ReqItem { id: string; aie_form_id: string; item_name: string; unit: string; quantity_requested: number; quantity_approved: number; quantity_fulfilled: number; unit_cost: number | null }
+interface Issuance { id: string; item_id: string; issued_to_name: string | null; quantity_issued: number; issued_at: string; acknowledged_at: string | null; notes: string | null; requisition_items?: { item_name: string; aie_forms?: { form_number: string } } }
+interface DepletionItem { item_id: string; item_name: string; unit: string; form_number: string; department: string; quantity_approved: number; quantity_fulfilled: number; quantity_remaining: number; pct_fulfilled: number }
 
 const CARD: React.CSSProperties = { background: 'white', border: '1px solid #f1f5f9', borderRadius: 20, boxShadow: '0 2px 8px rgba(0,0,0,0.04)', overflow: 'hidden' }
 const PH: React.CSSProperties = { fontSize: 12, fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 14 }
 const TX_CLR: Record<string, string> = { ISSUE: '#dc2626', RESTOCK: '#16a34a', DAMAGE: '#d97706', 'WRITE-OFF': '#7c3aed', RESERVE: '#2563eb' }
 
+type Tab = 'stock' | 'issue' | 'delivery' | 'burnrate' | 'aie' | 'requisitions' | 'history'
+
 export default function StorekeeperPage() {
-  const [tab, setTab]         = useState<'stock' | 'issue' | 'delivery' | 'burnrate' | 'aie'>('stock')
+  const [tab, setTab]         = useState<Tab>('stock')
   const [items, setItems]     = useState<Item[]>([])
   const [burn, setBurn]       = useState<BurnRate[]>([])
   const [forms, setForms]     = useState<AieForm[]>([])
@@ -39,6 +45,19 @@ export default function StorekeeperPage() {
   const [ocr, setOcr]       = useState<{ extracted_items: Array<{ description: string; quantity: number | null; unit: string | null }>; shortages: Array<{ expected_item: string; expected_qty: number; received_qty: number | null }>; has_shortages: boolean } | null>(null)
   const [ocrLoad, setOcrLoad] = useState(false)
 
+  // Requisitions tab
+  const [reqItems, setReqItems]           = useState<Record<string, ReqItem[]>>({})
+  const [expandedForm, setExpandedForm]   = useState<string | null>(null)
+  const [issuanceRows, setIssuanceRows]   = useState<Record<string, { name: string; qty: string }>>({})
+  const [issuingItem, setIssuingItem]     = useState<string | null>(null)
+  const [issueMsg, setIssueMsg]           = useState('')
+  const [aiSuggestions, setAiSuggestions] = useState<Record<string, unknown> | null>(null)
+  const [aiLoading, setAiLoading]         = useState(false)
+
+  // Issuance history
+  const [history, setHistory]     = useState<Issuance[]>([])
+  const [histLoading, setHistLoad] = useState(false)
+
   const loadAll = useCallback(async () => {
     setLoad(true)
     const [iR, bR, fR] = await Promise.all([
@@ -54,9 +73,58 @@ export default function StorekeeperPage() {
 
   useEffect(() => { loadAll() }, [loadAll])
 
+  // Load requisition items when tab opens
+  useEffect(() => {
+    if (tab !== 'requisitions') return
+    forms.forEach(async f => {
+      if (reqItems[f.id]) return
+      const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)
+      const { data } = await db.from('requisition_items').select('*').eq('aie_form_id', f.id).order('created_at')
+      setReqItems(prev => ({ ...prev, [f.id]: (data ?? []) as ReqItem[] }))
+    })
+  }, [tab, forms])
+
+  // Realtime subscription on requisition_item_issuances
+  useEffect(() => {
+    if (tab !== 'requisitions') return
+    const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)
+    const channel = db
+      .channel('req-issuances')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'requisition_item_issuances' }, payload => {
+        const inserted = payload.new as { item_id: string; quantity_issued: number }
+        setReqItems(prev => {
+          const next = { ...prev }
+          for (const formId in next) {
+            next[formId] = next[formId].map(item =>
+              item.id === inserted.item_id
+                ? { ...item, quantity_fulfilled: item.quantity_fulfilled + inserted.quantity_issued }
+                : item
+            )
+          }
+          return next
+        })
+      })
+      .subscribe()
+    return () => { db.removeChannel(channel) }
+  }, [tab])
+
+  // Load history
+  const loadHistory = useCallback(async () => {
+    setHistLoad(true)
+    const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)
+    const { data } = await db
+      .from('requisition_item_issuances')
+      .select('*, requisition_items(item_name, aie_forms(form_number))')
+      .order('issued_at', { ascending: false })
+      .limit(200)
+    setHistory((data ?? []) as Issuance[])
+    setHistLoad(false)
+  }, [])
+
+  useEffect(() => { if (tab === 'history') loadHistory() }, [tab, loadHistory])
+
   async function loadBin(id: string) {
     setBinItem(id)
-    const { createClient } = await import('@supabase/supabase-js')
     const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)
     const { data } = await db.from('inventory_logs').select('*').eq('item_id', id).order('server_timestamp', { ascending: false }).limit(50)
     setBinLog((data ?? []) as LogEntry[])
@@ -90,9 +158,67 @@ export default function StorekeeperPage() {
     setOcrLoad(false)
   }
 
-  const alerts = burn.filter(b => b.alert || b.anomaly_flag)
+  async function issueItem(formId: string, itemId: string) {
+    const row = issuanceRows[itemId]
+    if (!row?.name || !row?.qty || Number(row.qty) <= 0) {
+      setIssueMsg('Enter recipient name and quantity.')
+      return
+    }
+    setIssuingItem(itemId); setIssueMsg('')
+    const r = await fetch(`/api/requisitions/${formId}/issue`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ items: [{ item_id: itemId, issued_to_name: row.name, quantity_issued: Number(row.qty) }] }),
+    })
+    const d = await r.json() as { ok?: boolean; error?: string; items?: ReqItem[] }
+    if (d.ok && d.items) {
+      setReqItems(prev => ({ ...prev, [formId]: d.items! }))
+      setIssuanceRows(prev => ({ ...prev, [itemId]: { name: '', qty: '' } }))
+      setIssueMsg('✓ Issued successfully')
+    } else {
+      setIssueMsg(d.error ?? 'Failed to issue')
+    }
+    setIssuingItem(null)
+  }
 
+  async function loadAiSuggestions(formId: string) {
+    setAiLoading(true); setAiSuggestions(null)
+    const r = await fetch('/api/storekeeper/ai-distribution', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ aie_form_id: formId }),
+    })
+    const d = await r.json()
+    setAiSuggestions(d)
+    setAiLoading(false)
+  }
+
+  function downloadCSV() {
+    const rows = [
+      ['Date', 'Item', 'Form', 'Issued To', 'Qty', 'Notes', 'Acknowledged'],
+      ...history.map(h => [
+        new Date(h.issued_at).toLocaleString('en-KE'),
+        h.requisition_items?.item_name ?? '',
+        h.requisition_items?.aie_forms?.form_number ?? '',
+        h.issued_to_name ?? '',
+        String(h.quantity_issued),
+        h.notes ?? '',
+        h.acknowledged_at ? 'Yes' : 'No',
+      ]),
+    ]
+    const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n')
+    const blob = new Blob([csv], { type: 'text/csv' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = `issuance-history-${new Date().toISOString().slice(0, 10)}.csv`
+    a.click()
+  }
+
+  const alerts = burn.filter(b => b.alert || b.anomaly_flag)
   const grouped = items.reduce((g, i) => { (g[i.category] ??= []).push(i); return g }, {} as Record<string, Item[]>)
+
+  const TAB_LABELS: Record<Tab, string> = {
+    stock: 'Stock', issue: 'Issue Items', delivery: 'New Delivery',
+    burnrate: 'Burn Rate', aie: 'Old AIE', requisitions: 'Requisitions', history: 'History',
+  }
 
   return (
     <div style={{ padding: '20px 20px 40px', maxWidth: 900, margin: '0 auto' }}>
@@ -113,16 +239,16 @@ export default function StorekeeperPage() {
         </div>
       )}
 
-      <div style={{ display: 'flex', gap: 6, marginBottom: 16, overflowX: 'auto' }}>
-        {(['stock', 'issue', 'delivery', 'burnrate', 'aie'] as const).map(t => (
+      <div style={{ display: 'flex', gap: 6, marginBottom: 16, overflowX: 'auto', flexWrap: 'wrap' }}>
+        {(['stock', 'issue', 'delivery', 'burnrate', 'requisitions', 'history', 'aie'] as Tab[]).map(t => (
           <button key={t} onClick={() => setTab(t)} style={{ flexShrink: 0, padding: '7px 16px', borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: 'pointer', border: 'none', background: tab === t ? '#1e40af' : '#f3f4f6', color: tab === t ? 'white' : '#374151' }}>
-            {{ stock: 'Stock', issue: 'Issue Items', delivery: 'New Delivery', burnrate: 'Burn Rate', aie: 'Requisitions' }[t]}
+            {TAB_LABELS[t]}
           </button>
         ))}
       </div>
 
       {loading ? (
-        <div className="skeleton" style={{ height: 300, borderRadius: 16 }} />
+        <div style={{ height: 300, borderRadius: 16, background: 'linear-gradient(90deg,#f0f0f0 25%,#e0e0e0 50%,#f0f0f0 75%)', backgroundSize: '400px 100%' }} />
       ) : (
         <>
           {/* STOCK */}
@@ -159,14 +285,10 @@ export default function StorekeeperPage() {
                     </div>
                   ))
                 )}
-
-                {/* Bin card */}
                 {binItem && (
                   <div style={{ marginTop: 20, borderTop: '1px solid #f1f5f9', paddingTop: 16 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: '#374151' }}>
-                        Bin Card — {items.find(i => i.id === binItem)?.name}
-                      </div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: '#374151' }}>Bin Card — {items.find(i => i.id === binItem)?.name}</div>
                       <button onClick={() => { setBinItem(''); setBinLog([]) }} style={{ background: 'none', border: 'none', fontSize: 18, cursor: 'pointer', color: '#9ca3af' }}>×</button>
                     </div>
                     {binLog.length === 0 ? (
@@ -174,13 +296,7 @@ export default function StorekeeperPage() {
                     ) : (
                       <div style={{ overflowX: 'auto' }}>
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
-                          <thead>
-                            <tr style={{ background: '#f3f4f6' }}>
-                              {['Date', 'Type', 'Before', 'Change', 'After', 'Issued To', 'GPS'].map(h => (
-                                <th key={h} style={{ padding: '6px 10px', textAlign: 'left', fontWeight: 700, color: '#374151', whiteSpace: 'nowrap' }}>{h}</th>
-                              ))}
-                            </tr>
-                          </thead>
+                          <thead><tr style={{ background: '#f3f4f6' }}>{['Date','Type','Before','Change','After','Issued To','GPS'].map(h => <th key={h} style={{ padding: '6px 10px', textAlign: 'left', fontWeight: 700, color: '#374151', whiteSpace: 'nowrap' }}>{h}</th>)}</tr></thead>
                           <tbody>
                             {binLog.map(l => (
                               <tr key={l.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
@@ -218,22 +334,10 @@ export default function StorekeeperPage() {
                     </select>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                    <div>
-                      <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>Quantity *</label>
-                      <input type="number" min="0.01" step="0.01" value={iQty} onChange={e => setIQty(e.target.value)} style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid #d1d5db', fontSize: 13, boxSizing: 'border-box' }} />
-                    </div>
-                    <div>
-                      <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>Approved Req ID *</label>
-                      <input value={iReqId} onChange={e => setIReqId(e.target.value)} placeholder="Paste requisition UUID" style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid #d1d5db', fontSize: 13, boxSizing: 'border-box' }} />
-                    </div>
-                    <div>
-                      <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>Issued To *</label>
-                      <input value={iTo} onChange={e => setITo(e.target.value)} placeholder="Full name" style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid #d1d5db', fontSize: 13, boxSizing: 'border-box' }} />
-                    </div>
-                    <div>
-                      <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>Role / Position</label>
-                      <input value={iRole} onChange={e => setIRole(e.target.value)} placeholder="e.g. Head Cook" style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid #d1d5db', fontSize: 13, boxSizing: 'border-box' }} />
-                    </div>
+                    <div><label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>Quantity *</label><input type="number" min="0.01" step="0.01" value={iQty} onChange={e => setIQty(e.target.value)} style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid #d1d5db', fontSize: 13, boxSizing: 'border-box' }} /></div>
+                    <div><label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>Approved Req ID *</label><input value={iReqId} onChange={e => setIReqId(e.target.value)} placeholder="Paste requisition UUID" style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid #d1d5db', fontSize: 13, boxSizing: 'border-box' }} /></div>
+                    <div><label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>Issued To *</label><input value={iTo} onChange={e => setITo(e.target.value)} placeholder="Full name" style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid #d1d5db', fontSize: 13, boxSizing: 'border-box' }} /></div>
+                    <div><label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>Role / Position</label><input value={iRole} onChange={e => setIRole(e.target.value)} placeholder="e.g. Head Cook" style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid #d1d5db', fontSize: 13, boxSizing: 'border-box' }} /></div>
                   </div>
                   <input value={iNotes} onChange={e => setINotes(e.target.value)} placeholder="Notes (optional)" style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid #d1d5db', fontSize: 13 }} />
                   <div>
@@ -243,13 +347,7 @@ export default function StorekeeperPage() {
                       📷 {iPhoto ? 'Photo captured ✓' : 'Take photo of items'}
                     </button>
                   </div>
-
-                  {iMsg && (
-                    <div style={{ padding: '10px 14px', borderRadius: 10, background: iMsg.ok ? '#dcfce7' : '#fff5f5', color: iMsg.ok ? '#166534' : '#dc2626', fontSize: 13, fontWeight: 600 }}>
-                      {iMsg.text}
-                    </div>
-                  )}
-
+                  {iMsg && <div style={{ padding: '10px 14px', borderRadius: 10, background: iMsg.ok ? '#dcfce7' : '#fff5f5', color: iMsg.ok ? '#166534' : '#dc2626', fontSize: 13, fontWeight: 600 }}>{iMsg.text}</div>}
                   <button onClick={submitIssue} disabled={issuing} style={{ padding: '13px', background: issuing ? '#93c5fd' : 'linear-gradient(135deg,#1e40af,#059669)', color: 'white', border: 'none', borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: issuing ? 'not-allowed' : 'pointer' }}>
                     {issuing ? 'Processing…' : 'Issue & Log'}
                   </button>
@@ -265,41 +363,26 @@ export default function StorekeeperPage() {
               <div style={{ padding: '18px 20px' }}>
                 <div style={PH}>New Delivery — OCR Verification</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  <div>
-                    <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>Delivery Note Photo URL *</label>
-                    <input value={dUrl} onChange={e => setDUrl(e.target.value)} placeholder="https://… (upload to storage first, paste URL here)" style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid #d1d5db', fontSize: 13, boxSizing: 'border-box' }} />
-                  </div>
-                  <div>
-                    <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>Requisition ID (for shortage check)</label>
-                    <input value={dReq} onChange={e => setDReq(e.target.value)} placeholder="Optional" style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid #d1d5db', fontSize: 13, boxSizing: 'border-box' }} />
-                  </div>
+                  <div><label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>Delivery Note Photo URL *</label><input value={dUrl} onChange={e => setDUrl(e.target.value)} placeholder="https://… (upload to storage first)" style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid #d1d5db', fontSize: 13, boxSizing: 'border-box' }} /></div>
+                  <div><label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 4 }}>Requisition ID (for shortage check)</label><input value={dReq} onChange={e => setDReq(e.target.value)} placeholder="Optional" style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1px solid #d1d5db', fontSize: 13, boxSizing: 'border-box' }} /></div>
                   <button onClick={runOcr} disabled={ocrLoad || !dUrl} style={{ padding: '12px', background: ocrLoad ? '#93c5fd' : 'linear-gradient(135deg,#7c3aed,#1e40af)', color: 'white', border: 'none', borderRadius: 12, fontSize: 14, fontWeight: 700, cursor: ocrLoad ? 'not-allowed' : 'pointer' }}>
                     {ocrLoad ? 'Reading document…' : 'Extract with Google Vision OCR'}
                   </button>
-
                   {ocr && (
                     <div>
                       {ocr.has_shortages && (
                         <div style={{ background: '#fff5f5', border: '1px solid #fecaca', borderRadius: 12, padding: '12px', marginBottom: 12 }}>
                           <div style={{ fontSize: 13, fontWeight: 700, color: '#dc2626', marginBottom: 8 }}>⚠ {ocr.shortages.length} shortage(s) detected</div>
-                          {ocr.shortages.map((s, i) => (
-                            <div key={i} style={{ fontSize: 12, color: '#7f1d1d', marginBottom: 3 }}>
-                              <strong>{s.expected_item}</strong>: expected {s.expected_qty} — received {s.received_qty ?? 'not found in delivery note'}
-                            </div>
-                          ))}
+                          {ocr.shortages.map((s, i) => <div key={i} style={{ fontSize: 12, color: '#7f1d1d', marginBottom: 3 }}><strong>{s.expected_item}</strong>: expected {s.expected_qty} — received {s.received_qty ?? 'not found'}</div>)}
                         </div>
                       )}
-                      <div style={{ fontSize: 12, fontWeight: 700, color: '#374151', marginBottom: 8 }}>
-                        Extracted {ocr.extracted_items.length} item{ocr.extracted_items.length !== 1 ? 's' : ''} — confirm or correct below:
-                      </div>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: '#374151', marginBottom: 8 }}>Extracted {ocr.extracted_items.length} item{ocr.extracted_items.length !== 1 ? 's' : ''}:</div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 320, overflowY: 'auto' }}>
                         {ocr.extracted_items.map((item, i) => (
                           <div key={i} style={{ display: 'flex', gap: 10, padding: '7px 12px', background: '#f9fafb', borderRadius: 8, fontSize: 12, alignItems: 'center' }}>
                             <span style={{ color: '#9ca3af', minWidth: 22 }}>{i + 1}.</span>
                             <span style={{ flex: 1, color: '#111827', fontWeight: 600 }}>{item.description}</span>
-                            {item.quantity != null && (
-                              <span style={{ color: '#374151', fontWeight: 700, flexShrink: 0 }}>{item.quantity} {item.unit ?? ''}</span>
-                            )}
+                            {item.quantity != null && <span style={{ color: '#374151', fontWeight: 700, flexShrink: 0 }}>{item.quantity} {item.unit ?? ''}</span>}
                           </div>
                         ))}
                       </div>
@@ -316,29 +399,123 @@ export default function StorekeeperPage() {
               <div style={{ height: 4, background: 'linear-gradient(90deg,#d97706,#dc2626)' }} />
               <div style={{ padding: '18px 20px' }}>
                 <div style={PH}>Burn Rate — Boarding Provisions</div>
-                {burn.length === 0 ? (
-                  <div style={{ textAlign: 'center', padding: '32px', color: '#9ca3af', fontSize: 13 }}>No data yet — burn rates appear after 7 days of ISSUE transactions</div>
-                ) : burn.map(b => (
-                  <div key={b.item_id} style={{ padding: '12px 14px', background: b.anomaly_flag ? '#fff5f5' : b.alert ? '#fffbeb' : '#f9fafb', border: `1px solid ${b.anomaly_flag ? '#fecaca' : b.alert ? '#fde68a' : '#f1f5f9'}`, borderRadius: 12, marginBottom: 8 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                      <div>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: '#111827' }}>{b.name}</div>
-                        <div style={{ fontSize: 11, color: '#6b7280', marginTop: 2 }}>
-                          Avg {b.avg_daily_7d} {b.unit}/day · Stock: {b.current_stock} {b.unit}
+                {burn.length === 0 ? <div style={{ textAlign: 'center', padding: '32px', color: '#9ca3af', fontSize: 13 }}>No data yet — burn rates appear after 7 days of ISSUE transactions</div>
+                  : burn.map(b => (
+                    <div key={b.item_id} style={{ padding: '12px 14px', background: b.anomaly_flag ? '#fff5f5' : b.alert ? '#fffbeb' : '#f9fafb', border: `1px solid ${b.anomaly_flag ? '#fecaca' : b.alert ? '#fde68a' : '#f1f5f9'}`, borderRadius: 12, marginBottom: 8 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: '#111827' }}>{b.name}</div>
+                          <div style={{ fontSize: 11, color: '#6b7280', marginTop: 2 }}>Avg {b.avg_daily_7d} {b.unit}/day · Stock: {b.current_stock} {b.unit}</div>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          {b.days_remaining != null ? <div style={{ fontSize: 20, fontWeight: 800, color: b.days_remaining <= 5 ? '#dc2626' : b.days_remaining <= 10 ? '#d97706' : '#16a34a' }}>{b.days_remaining}d</div> : <span style={{ fontSize: 12, color: '#9ca3af' }}>—</span>}
+                          <div style={{ fontSize: 9, color: '#9ca3af' }}>days remaining</div>
                         </div>
                       </div>
-                      <div style={{ textAlign: 'right' }}>
-                        {b.days_remaining != null ? (
-                          <div style={{ fontSize: 20, fontWeight: 800, color: b.days_remaining <= 5 ? '#dc2626' : b.days_remaining <= 10 ? '#d97706' : '#16a34a' }}>
-                            {b.days_remaining}d
-                          </div>
-                        ) : <span style={{ fontSize: 12, color: '#9ca3af' }}>—</span>}
-                        <div style={{ fontSize: 9, color: '#9ca3af' }}>days remaining</div>
+                      {b.anomaly_flag && <div style={{ marginTop: 8, fontSize: 12, fontWeight: 700, color: '#dc2626' }}>🔴 Potential leakage — consumption &gt;20% above expected. Flag to principal.</div>}
+                    </div>
+                  ))}
+              </div>
+            </div>
+          )}
+
+          {/* REQUISITIONS (new item-level tab) */}
+          {tab === 'requisitions' && (
+            <div style={CARD}>
+              <div style={{ height: 4, background: 'linear-gradient(90deg,#059669,#1e40af)' }} />
+              <div style={{ padding: '18px 20px' }}>
+                <div style={PH}>Approved Requisitions — Item Issuance</div>
+                {issueMsg && (
+                  <div style={{ padding: '8px 14px', borderRadius: 8, background: issueMsg.startsWith('✓') ? '#dcfce7' : '#fff5f5', color: issueMsg.startsWith('✓') ? '#166534' : '#dc2626', fontSize: 12, fontWeight: 600, marginBottom: 12 }}>{issueMsg}</div>
+                )}
+                {forms.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '32px', color: '#9ca3af', fontSize: 13 }}>No approved requisitions pending fulfilment</div>
+                ) : forms.map(f => (
+                  <div key={f.id} style={{ border: '1px solid #e5e7eb', borderRadius: 12, marginBottom: 12, overflow: 'hidden' }}>
+                    {/* Form header */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px', background: expandedForm === f.id ? '#f0fdf4' : '#f9fafb', cursor: 'pointer' }}
+                      onClick={() => setExpandedForm(prev => prev === f.id ? null : f.id)}>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: '#111827' }}>{f.form_number}</div>
+                        <div style={{ fontSize: 11, color: '#6b7280' }}>{f.department} · {f.requested_by}</div>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: '#374151', marginTop: 2 }}>KSH {f.total_amount.toLocaleString('en-KE', { minimumFractionDigits: 2 })}</div>
+                      </div>
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                        <button onClick={e => { e.stopPropagation(); loadAiSuggestions(f.id) }} disabled={aiLoading}
+                          style={{ padding: '5px 12px', background: '#7c3aed', color: 'white', border: 'none', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: aiLoading ? 'not-allowed' : 'pointer', opacity: aiLoading ? 0.6 : 1 }}>
+                          {aiLoading ? '…' : '🤖 AI Distribute'}
+                        </button>
+                        <span style={{ fontSize: 18, color: '#6b7280' }}>{expandedForm === f.id ? '▲' : '▼'}</span>
                       </div>
                     </div>
-                    {b.anomaly_flag && (
-                      <div style={{ marginTop: 8, fontSize: 12, fontWeight: 700, color: '#dc2626' }}>
-                        🔴 Potential leakage — consumption &gt;20% above expected for 3+ consecutive days. Flag to principal.
+
+                    {/* Expanded: item rows */}
+                    {expandedForm === f.id && (
+                      <div style={{ padding: '12px 16px', borderTop: '1px solid #e5e7eb' }}>
+                        {!(reqItems[f.id]) ? (
+                          <div style={{ fontSize: 12, color: '#9ca3af', padding: '8px 0' }}>Loading items…</div>
+                        ) : reqItems[f.id].length === 0 ? (
+                          <div style={{ fontSize: 12, color: '#9ca3af', padding: '8px 0' }}>No line items recorded. Use the scan feature when creating requisitions.</div>
+                        ) : (
+                          reqItems[f.id].map(item => {
+                            const remaining = item.quantity_approved - item.quantity_fulfilled
+                            const pct = item.quantity_approved > 0 ? Math.round((item.quantity_fulfilled / item.quantity_approved) * 100) : 0
+                            const pctClr = pct >= 90 ? '#dc2626' : pct >= 60 ? '#d97706' : '#059669'
+                            const row = issuanceRows[item.id] ?? { name: '', qty: '' }
+                            return (
+                              <div key={item.id} style={{ padding: '10px 12px', background: remaining === 0 ? '#f0fdf4' : '#fafafa', borderRadius: 10, marginBottom: 8, border: '1px solid #e5e7eb' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                                  <div>
+                                    <span style={{ fontSize: 13, fontWeight: 600, color: '#111827' }}>{item.item_name}</span>
+                                    <span style={{ fontSize: 11, color: '#9ca3af', marginLeft: 6 }}>{item.unit}</span>
+                                  </div>
+                                  <div style={{ textAlign: 'right', fontSize: 11 }}>
+                                    <span style={{ color: pctClr, fontWeight: 700 }}>{pct}%</span>
+                                    <span style={{ color: '#9ca3af', marginLeft: 4 }}>{item.quantity_fulfilled}/{item.quantity_approved}</span>
+                                  </div>
+                                </div>
+                                {/* Depletion bar */}
+                                <div style={{ height: 4, background: '#e5e7eb', borderRadius: 2, marginBottom: 8 }}>
+                                  <div style={{ height: '100%', width: `${pct}%`, background: pctClr, borderRadius: 2, transition: 'width 0.3s' }} />
+                                </div>
+                                {remaining > 0 && (
+                                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                                    <input placeholder="Recipient name" value={row.name}
+                                      onChange={e => setIssuanceRows(prev => ({ ...prev, [item.id]: { ...row, name: e.target.value } }))}
+                                      style={{ flex: 2, minWidth: 120, padding: '7px 10px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: 12 }} />
+                                    <input type="number" placeholder={`Qty (max ${remaining})`} value={row.qty} min={1} max={remaining}
+                                      onChange={e => setIssuanceRows(prev => ({ ...prev, [item.id]: { ...row, qty: e.target.value } }))}
+                                      style={{ flex: 1, minWidth: 80, padding: '7px 10px', borderRadius: 8, border: '1px solid #d1d5db', fontSize: 12 }} />
+                                    <button onClick={() => issueItem(f.id, item.id)} disabled={issuingItem === item.id}
+                                      style={{ padding: '7px 14px', background: '#059669', color: 'white', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: issuingItem === item.id ? 'not-allowed' : 'pointer', opacity: issuingItem === item.id ? 0.6 : 1 }}>
+                                      {issuingItem === item.id ? '…' : 'Issue'}
+                                    </button>
+                                  </div>
+                                )}
+                                {remaining === 0 && <div style={{ fontSize: 11, color: '#059669', fontWeight: 600 }}>✓ Fully issued</div>}
+                              </div>
+                            )
+                          })
+                        )}
+
+                        {/* AI suggestions panel */}
+                        {aiSuggestions && (
+                          <div style={{ marginTop: 12, padding: '12px', background: '#f5f3ff', border: '1px solid #ddd6fe', borderRadius: 10 }}>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: '#7c3aed', marginBottom: 8 }}>🤖 AI Distribution Suggestions</div>
+                            {(aiSuggestions as { summary?: string }).summary && (
+                              <p style={{ fontSize: 12, color: '#4b5563', marginBottom: 8, lineHeight: 1.5 }}>{(aiSuggestions as { summary?: string }).summary}</p>
+                            )}
+                            {((aiSuggestions as { suggestions?: Array<{ item_name: string; distributions: Array<{ recipient: string; quantity: number; reason: string }> }> }).suggestions ?? []).map((s, i) => (
+                              <div key={i} style={{ marginBottom: 8 }}>
+                                <div style={{ fontSize: 11, fontWeight: 700, color: '#374151', marginBottom: 4 }}>{s.item_name}</div>
+                                {s.distributions.map((d, j) => (
+                                  <div key={j} style={{ fontSize: 11, color: '#6b7280', padding: '2px 8px' }}>→ {d.recipient}: {d.quantity} — <em>{d.reason}</em></div>
+                                ))}
+                              </div>
+                            ))}
+                            <button onClick={() => setAiSuggestions(null)} style={{ fontSize: 11, color: '#9ca3af', background: 'none', border: 'none', cursor: 'pointer', marginTop: 6 }}>Dismiss</button>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -347,12 +524,58 @@ export default function StorekeeperPage() {
             </div>
           )}
 
-          {/* AIE */}
+          {/* ISSUANCE HISTORY */}
+          {tab === 'history' && (
+            <div style={CARD}>
+              <div style={{ height: 4, background: 'linear-gradient(90deg,#1e40af,#7c3aed)' }} />
+              <div style={{ padding: '18px 20px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+                  <div style={PH}>Issuance History</div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button onClick={downloadCSV} style={{ padding: '6px 14px', background: '#1e40af', color: 'white', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>↓ CSV</button>
+                    <button onClick={() => window.print()} style={{ padding: '6px 14px', background: '#f3f4f6', color: '#374151', border: '1px solid #e5e7eb', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>🖨 Print</button>
+                  </div>
+                </div>
+                {histLoading ? (
+                  <div style={{ textAlign: 'center', padding: '32px', color: '#9ca3af', fontSize: 13 }}>Loading…</div>
+                ) : history.length === 0 ? (
+                  <div style={{ textAlign: 'center', padding: '32px', color: '#9ca3af', fontSize: 13 }}>No issuances recorded yet.</div>
+                ) : (
+                  <div style={{ overflowX: 'auto' }} id="issuance-history-table">
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                      <thead>
+                        <tr style={{ background: '#f3f4f6' }}>
+                          {['Date', 'Item', 'Form', 'Issued To', 'Qty', 'Notes', 'Ack'].map(h => (
+                            <th key={h} style={{ padding: '8px 10px', textAlign: 'left', fontWeight: 700, color: '#374151', whiteSpace: 'nowrap', fontSize: 11 }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {history.map(h => (
+                          <tr key={h.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                            <td style={{ padding: '8px 10px', color: '#6b7280', whiteSpace: 'nowrap' }}>{new Date(h.issued_at).toLocaleDateString('en-KE', { day: '2-digit', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit' })}</td>
+                            <td style={{ padding: '8px 10px', fontWeight: 600, color: '#111827' }}>{h.requisition_items?.item_name ?? '—'}</td>
+                            <td style={{ padding: '8px 10px', color: '#6b7280', fontSize: 11 }}>{h.requisition_items?.aie_forms?.form_number ?? '—'}</td>
+                            <td style={{ padding: '8px 10px', color: '#374151' }}>{h.issued_to_name ?? '—'}</td>
+                            <td style={{ padding: '8px 10px', fontWeight: 700, color: '#1e40af' }}>{h.quantity_issued}</td>
+                            <td style={{ padding: '8px 10px', color: '#9ca3af', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{h.notes ?? '—'}</td>
+                            <td style={{ padding: '8px 10px' }}>{h.acknowledged_at ? <span style={{ color: '#059669' }}>✓</span> : <span style={{ color: '#d1d5db' }}>—</span>}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* OLD AIE (kept for reference) */}
           {tab === 'aie' && (
             <div style={CARD}>
               <div style={{ height: 4, background: 'linear-gradient(90deg,#059669,#1e40af)' }} />
               <div style={{ padding: '18px 20px' }}>
-                <div style={PH}>Approved Requisitions to Fulfil</div>
+                <div style={PH}>Approved Requisitions (Legacy View)</div>
                 {forms.length === 0 ? (
                   <div style={{ textAlign: 'center', padding: '32px', color: '#9ca3af', fontSize: 13 }}>No approved requisitions pending fulfilment</div>
                 ) : forms.map(f => (

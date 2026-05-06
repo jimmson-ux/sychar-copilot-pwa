@@ -11,7 +11,7 @@ interface SchoolTheme {
   secondaryColor: string
 }
 
-type Tab = 'password' | 'push' | 'totp' | 'emergency'
+type Tab = 'google' | 'password' | 'push' | 'totp' | 'emergency'
 
 function SycharIcon({ size = 32 }: { size?: number }) {
   return (
@@ -28,6 +28,17 @@ function SycharIcon({ size = 32 }: { size?: number }) {
       <path d="M10 45 Q30 52 50 45" stroke="url(#sg)" strokeWidth="5" strokeLinecap="round"/>
       <path d="M15 10 Q8 30 15 50"  stroke="url(#sg)" strokeWidth="5" strokeLinecap="round"/>
       <path d="M45 10 Q52 30 45 50" stroke="url(#sg)" strokeWidth="5" strokeLinecap="round"/>
+    </svg>
+  )
+}
+
+function GoogleIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/>
+      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
     </svg>
   )
 }
@@ -55,11 +66,14 @@ function Spinner() {
 
 export default function LoginPage() {
   const [theme,    setTheme]    = useState<SchoolTheme | null>(null)
-  const [tab,      setTab]      = useState<Tab>('password')
+  const [tab,      setTab]      = useState<Tab>('google')
   // Password tab
   const [email,    setEmail]    = useState('')
   const [password, setPassword] = useState('')
   const [showPw,   setShowPw]   = useState(false)
+  const [pwMode,   setPwMode]   = useState<'login' | 'reset'>('login')
+  const [resetEmail,  setResetEmail]  = useState('')
+  const [resetStatus, setResetStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle')
   // Magic Push tab
   const [pushEmail,  setPushEmail]  = useState('')
   const [pushStatus, setPushStatus] = useState<'idle' | 'sending' | 'waiting' | 'no_devices' | 'error'>('idle')
@@ -70,6 +84,8 @@ export default function LoginPage() {
   // Emergency tab
   const [emergEmail, setEmergEmail] = useState('')
   const [emergCode,  setEmergCode]  = useState('')
+  // Google tab
+  const [googleLoading, setGoogleLoading] = useState(false)
   // Shared
   const [loading, setLoading] = useState(false)
   const [error,   setError]   = useState('')
@@ -109,6 +125,30 @@ export default function LoginPage() {
     document.cookie = `sychar-role=${subRole}; ${opts}`
     document.cookie = `sychar-sub=active; ${opts}`
     window.location.assign(forceChange ? '/change-password' : '/dashboard')
+  }
+
+  // ── TAB 0: Google OAuth ──────────────────────────────────────────────────────
+  async function handleGoogle() {
+    setError('')
+    setGoogleLoading(true)
+    try {
+      const supabase = createClient()
+      const { error: oauthErr } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`,
+          queryParams: { access_type: 'offline', prompt: 'select_account' },
+        },
+      })
+      if (oauthErr) {
+        setError(oauthErr.message)
+        setGoogleLoading(false)
+      }
+      // On success, browser navigates to Google — no further action needed
+    } catch {
+      setError('Failed to initiate Google sign-in. Please try again.')
+      setGoogleLoading(false)
+    }
   }
 
   // ── TAB 1: Password ──────────────────────────────────────────────────────────
@@ -241,18 +281,45 @@ export default function LoginPage() {
     if (d.actionLink) window.location.href = d.actionLink
   }
 
+  // ── Reset / Set password ────────────────────────────────────────────────────
+  async function handleResetPassword(e: React.FormEvent) {
+    e.preventDefault()
+    setError('')
+    setResetStatus('sending')
+    try {
+      const supabase = createClient()
+      const { error: resetErr } = await supabase.auth.resetPasswordForEmail(
+        resetEmail.trim().toLowerCase(),
+        { redirectTo: `${window.location.origin}/auth/callback?next=/change-password` },
+      )
+      if (resetErr) {
+        setError(resetErr.message)
+        setResetStatus('error')
+      } else {
+        setResetStatus('sent')
+      }
+    } catch {
+      setError('Network error — please try again.')
+      setResetStatus('error')
+    }
+  }
+
   function switchTab(t: Tab) {
     setTab(t)
     setError('')
     setLoading(false)
+    setGoogleLoading(false)
     setPushStatus('idle')
     setPushToken('')
+    setPwMode('login')
+    setResetStatus('idle')
   }
 
   const primary   = theme?.themeColor    ?? '#1e40af'
   const secondary = theme?.secondaryColor ?? '#059669'
 
   const TABS: { id: Tab; label: string; icon: string }[] = [
+    { id: 'google',    label: 'Google',       icon: '🔵' },
     { id: 'password',  label: 'Password',     icon: '🔑' },
     { id: 'push',      label: 'Magic Push',   icon: '🔔' },
     { id: 'totp',      label: 'Authenticator',icon: '🔐' },
@@ -292,6 +359,18 @@ export default function LoginPage() {
         .login-btn:hover:not(:disabled) { opacity: .92; transform: translateY(-1px); }
         .login-btn:active:not(:disabled) { transform: translateY(0); }
         .login-btn:disabled { opacity: .6; cursor: not-allowed; }
+        .google-btn {
+          width: 100%; padding: 14px;
+          background: white; color: #374151;
+          border: 1.5px solid #e5e7eb; border-radius: 11px;
+          font-size: 15px; font-weight: 600; font-family: inherit;
+          cursor: pointer; transition: all .18s;
+          min-height: 50px; display: flex; align-items: center; justify-content: center; gap: 10px;
+          box-shadow: 0 1px 4px rgba(0,0,0,0.07);
+        }
+        .google-btn:hover:not(:disabled) { background: #f9fafb; border-color: #d1d5db; box-shadow: 0 2px 8px rgba(0,0,0,0.10); transform: translateY(-1px); }
+        .google-btn:active:not(:disabled) { transform: translateY(0); }
+        .google-btn:disabled { opacity: .6; cursor: not-allowed; }
         .pw-wrap { position: relative; }
         .pw-wrap input { padding-right: 46px; }
         .pw-toggle { position: absolute; right: 13px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: #9ca3af; display: flex; padding: 4px; }
@@ -361,21 +440,50 @@ export default function LoginPage() {
                     className={`tab-btn${tab === t.id ? ' active' : ''}`}
                     onClick={() => switchTab(t.id)}
                   >
-                    <span style={{ fontSize: 15 }}>{t.icon}</span>
+                    <span style={{ fontSize: 15 }}>{t.id === 'google' ? <GoogleIcon /> : t.icon}</span>
                     {t.label}
                   </button>
                 ))}
               </div>
 
+              {/* ── Tab 0: Google ── */}
+              {tab === 'google' && (
+                <div className="fade-up" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                  <div style={{ padding: '10px 13px', background: '#eff6ff', borderRadius: 10, fontSize: 12, color: '#1e40af', lineHeight: 1.5 }}>
+                    Sign in with your school Google Workspace account. Fastest and most secure option.
+                  </div>
+                  {error && <ErrorBox msg={error} />}
+                  <button className="google-btn" onClick={handleGoogle} disabled={googleLoading}>
+                    {googleLoading ? <Spinner /> : <GoogleIcon />}
+                    {googleLoading ? 'Redirecting to Google…' : 'Sign in with Google'}
+                  </button>
+                  <div style={{ textAlign: 'center', fontSize: 12, color: '#9ca3af' }}>
+                    Don&apos;t have a Google account?{' '}
+                    <button onClick={() => switchTab('password')} style={{ background: 'none', border: 'none', color: primary, cursor: 'pointer', fontWeight: 600, fontSize: 12, padding: 0, fontFamily: 'inherit' }}>
+                      Use password instead
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* ── Tab 1: Password ── */}
-              {tab === 'password' && (
+              {tab === 'password' && pwMode === 'login' && (
                 <form className="fade-up" onSubmit={handlePassword} style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
                   <div>
                     <label style={{ fontSize: 12, fontWeight: 500, color: '#374151', display: 'block', marginBottom: 5 }}>Email address</label>
                     <input className="login-input" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com" required autoComplete="email" autoFocus />
                   </div>
                   <div>
-                    <label style={{ fontSize: 12, fontWeight: 500, color: '#374151', display: 'block', marginBottom: 5 }}>Password</label>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 }}>
+                      <label style={{ fontSize: 12, fontWeight: 500, color: '#374151' }}>Password</label>
+                      <button
+                        type="button"
+                        onClick={() => { setPwMode('reset'); setResetEmail(email); setError(''); setResetStatus('idle') }}
+                        style={{ fontSize: 11, color: primary, background: 'none', border: 'none', cursor: 'pointer', fontWeight: 500, padding: 0, fontFamily: 'inherit' }}
+                      >
+                        Forgot / Set password?
+                      </button>
+                    </div>
                     <div className="pw-wrap">
                       <input className="login-input" type={showPw ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} placeholder="Enter your password" required autoComplete="current-password" />
                       <button type="button" className="pw-toggle" onClick={() => setShowPw(v => !v)}>
@@ -388,6 +496,56 @@ export default function LoginPage() {
                     {loading ? <Spinner /> : 'Sign in'}
                   </button>
                 </form>
+              )}
+
+              {/* ── Tab 1: Password reset ── */}
+              {tab === 'password' && pwMode === 'reset' && (
+                <div className="fade-up" style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
+                  {resetStatus === 'sent' ? (
+                    <div style={{ textAlign: 'center', padding: '16px 0' }}>
+                      <div style={{ fontSize: 40, marginBottom: 12 }}>📧</div>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: '#111827', marginBottom: 6 }}>Check your email</div>
+                      <div style={{ fontSize: 12, color: '#6b7280', lineHeight: 1.6, marginBottom: 20 }}>
+                        A password reset link has been sent to <strong>{resetEmail}</strong>. Click the link to set your new password.
+                      </div>
+                      <button
+                        onClick={() => { setPwMode('login'); setResetStatus('idle'); setError('') }}
+                        style={{ fontSize: 12, color: primary, background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, fontFamily: 'inherit' }}
+                      >
+                        ← Back to sign in
+                      </button>
+                    </div>
+                  ) : (
+                    <form onSubmit={handleResetPassword} style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
+                      <div style={{ padding: '10px 13px', background: '#eff6ff', borderRadius: 10, fontSize: 12, color: '#1e40af', lineHeight: 1.5 }}>
+                        Enter your work email and we&apos;ll send you a link to set your password.
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 12, fontWeight: 500, color: '#374151', display: 'block', marginBottom: 5 }}>Work email</label>
+                        <input
+                          className="login-input"
+                          type="email"
+                          value={resetEmail}
+                          onChange={e => setResetEmail(e.target.value)}
+                          placeholder="you@example.com"
+                          required
+                          autoFocus
+                        />
+                      </div>
+                      {error && <ErrorBox msg={error} />}
+                      <button type="submit" className="login-btn" disabled={resetStatus === 'sending'}>
+                        {resetStatus === 'sending' ? <Spinner /> : 'Send reset link'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setPwMode('login'); setError('') }}
+                        style={{ fontSize: 12, color: '#6b7280', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'center' }}
+                      >
+                        ← Back to sign in
+                      </button>
+                    </form>
+                  )}
+                </div>
               )}
 
               {/* ── Tab 2: Magic Push ── */}

@@ -137,6 +137,27 @@ Return ONLY a JSON object:
   "confidence": 0.9
 }
 No markdown. No explanation. JSON only.`,
+
+  ocr_aie_form: `You are processing a Kenya government AIE (Authority to Incur Expenditure) form from a secondary school.
+Extract all line items and metadata. Return ONLY a JSON object:
+{
+  "form_number": null,
+  "vote_head": null,
+  "department": null,
+  "prepared_by": null,
+  "date": null,
+  "items": [
+    { "item_name": "", "unit": "", "quantity": 0, "unit_cost": 0, "total": 0 }
+  ],
+  "total_amount": null,
+  "confidence": 0.9
+}
+Rules:
+- "date" must be in YYYY-MM-DD format or null
+- "quantity" and "unit_cost" must be numbers (not strings)
+- Extract every line item visible — do not truncate the list
+- If a field is not visible, use null (or 0 for numbers)
+No markdown. No explanation. JSON only.`,
 }
 
 const ALLOWED_TASKS = new Set(Object.keys(GEMINI_PROMPTS))

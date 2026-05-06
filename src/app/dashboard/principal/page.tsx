@@ -15,6 +15,8 @@ interface AiInsight  { id: string; insight_type: string; title: string; body: st
 interface Notice     { id: string; title: string; content: string; target_audience: string; created_at: string }
 interface Subscription { status: string; trial_ends_at: string | null; sms_used: number; sms_quota: number }
 interface FeeSummary { totalCollected: number; transactionCount: number; currency: string }
+interface AieForm    { id: string; form_number: string; requested_by: string; department: string; total_amount: number; status: string; created_at: string }
+interface DepletionItem { item_id: string; aie_form_id: string; form_number: string; department: string; item_name: string; unit: string; quantity_approved: number; quantity_fulfilled: number; pct_fulfilled: number }
 
 interface OverviewData {
   studentStats:       StudentStats
@@ -149,6 +151,13 @@ export default function PrincipalDashboard() {
   const [broadcastLoading, setBroadcastLoading] = useState(false)
   const [broadcastResult, setBroadcastResult]   = useState<{ ok: boolean; sent?: number; failed?: number; broadcast_id?: string } | null>(null)
 
+  // Requisition approval + depletion state
+  const [pendingReqs, setPendingReqs]             = useState<AieForm[]>([])
+  const [depletionItems, setDepletionItems]       = useState<DepletionItem[]>([])
+  const [reqsLoading, setReqsLoading]             = useState(true)
+  const [depletionLoading, setDepletionLoading]   = useState(true)
+  const [approvingId, setApprovingId]             = useState<string | null>(null)
+
   const sendEmergency = async () => {
     if (!broadcastMsg.trim()) return
     setBroadcastLoading(true)
@@ -166,6 +175,37 @@ export default function PrincipalDashboard() {
     } finally {
       setBroadcastLoading(false)
     }
+  }
+
+  async function loadPendingReqs() {
+    try {
+      const res = await fetch('/api/aie/forms?status=pending')
+      const d = await res.json() as { forms?: AieForm[] }
+      setPendingReqs(d.forms ?? [])
+    } catch { /* ignore */ }
+    setReqsLoading(false)
+  }
+
+  async function loadDepletion() {
+    try {
+      const res = await fetch('/api/storekeeper/depletion?threshold=80')
+      const d = await res.json() as { items?: DepletionItem[] }
+      setDepletionItems(d.items ?? [])
+    } catch { /* ignore */ }
+    setDepletionLoading(false)
+  }
+
+  async function handleApproveReject(id: string, action: 'approve' | 'reject') {
+    setApprovingId(id)
+    try {
+      await fetch(`/api/requisitions/${id}/approve`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action }),
+      })
+      setPendingReqs(prev => prev.filter(r => r.id !== id))
+    } catch { /* ignore */ }
+    setApprovingId(null)
   }
 
   const { greeting } = getTimeGreeting()
@@ -189,6 +229,8 @@ export default function PrincipalDashboard() {
   useEffect(() => {
     if (!schoolId) return
     load()
+    loadPendingReqs()
+    loadDepletion()
     // Pull name from localStorage (set at login)
     const n = localStorage.getItem('sychar_name')
     if (n) setName(n.split(' ')[0])
@@ -486,6 +528,141 @@ export default function PrincipalDashboard() {
               )}
             </Panel>
           </div>
+
+          {/* Requisitions Approval Queue */}
+          {(reqsLoading || pendingReqs.length > 0) && (
+            <div className="principal-panel" style={{ animationDelay: '0.21s', gridColumn: '1 / -1' }}>
+              <Panel
+                title={reqsLoading ? 'Requisitions Pending Approval' : `Requisitions Pending Approval (${pendingReqs.length})`}
+                icon="📄"
+                action={
+                  <button
+                    onClick={loadPendingReqs}
+                    style={{ fontSize: 12, color: '#1e40af', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 500 }}
+                  >
+                    Refresh
+                  </button>
+                }
+              >
+                {reqsLoading ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {[1, 2].map(i => <Skeleton key={i} h={64} r={10} />)}
+                  </div>
+                ) : pendingReqs.length === 0 ? (
+                  <div style={{ fontSize: 13, color: '#9ca3af', textAlign: 'center', padding: '20px 0' }}>
+                    No pending requisitions
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {pendingReqs.map(req => (
+                      <div key={req.id} style={{
+                        display: 'flex', alignItems: 'center', gap: 12,
+                        padding: '12px 14px', background: '#f9fafb', borderRadius: 12,
+                        border: '1px solid #e5e7eb',
+                      }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: 13, fontWeight: 700, color: '#111827' }}>
+                              {req.form_number || 'AIE Form'}
+                            </span>
+                            <span style={{ fontSize: 12, color: '#6b7280', background: '#f3f4f6', padding: '2px 8px', borderRadius: 20 }}>
+                              {req.department}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: 12, color: '#6b7280', marginTop: 3 }}>
+                            {req.requested_by} · {fmtCurrency(req.total_amount)} · {timeSince(req.created_at)}
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                          <button
+                            disabled={approvingId === req.id}
+                            onClick={() => handleApproveReject(req.id, 'reject')}
+                            style={{
+                              padding: '6px 14px', borderRadius: 8, fontSize: 12, fontWeight: 600,
+                              border: '2px solid #fca5a5', background: 'white', color: '#dc2626',
+                              cursor: approvingId === req.id ? 'not-allowed' : 'pointer',
+                              opacity: approvingId === req.id ? 0.6 : 1,
+                            }}
+                          >
+                            Reject
+                          </button>
+                          <button
+                            disabled={approvingId === req.id}
+                            onClick={() => handleApproveReject(req.id, 'approve')}
+                            style={{
+                              padding: '6px 14px', borderRadius: 8, fontSize: 12, fontWeight: 600,
+                              border: 'none', background: '#16a34a', color: 'white',
+                              cursor: approvingId === req.id ? 'not-allowed' : 'pointer',
+                              opacity: approvingId === req.id ? 0.6 : 1,
+                            }}
+                          >
+                            {approvingId === req.id ? '…' : 'Approve'}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </Panel>
+            </div>
+          )}
+
+          {/* Depletion Alerts Panel */}
+          {(depletionLoading || depletionItems.length > 0) && (
+            <div className="principal-panel" style={{ animationDelay: '0.22s', gridColumn: '1 / -1' }}>
+              <Panel
+                title={depletionLoading ? 'Depletion Alerts' : `Depletion Alerts (${depletionItems.length})`}
+                icon="⚠️"
+                action={
+                  <button
+                    onClick={() => router.push('/dashboard/storekeeper')}
+                    style={{ fontSize: 12, color: '#1e40af', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 500 }}
+                  >
+                    View store →
+                  </button>
+                }
+              >
+                {depletionLoading ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {[1, 2, 3].map(i => <Skeleton key={i} h={48} r={10} />)}
+                  </div>
+                ) : depletionItems.length === 0 ? (
+                  <div style={{ fontSize: 13, color: '#9ca3af', textAlign: 'center', padding: '20px 0' }}>
+                    No items above 80% depletion
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {depletionItems.map(item => {
+                      const pct = Math.min(100, item.pct_fulfilled)
+                      const barColor = pct >= 95 ? '#ef4444' : pct >= 90 ? '#f97316' : '#f59e0b'
+                      return (
+                        <div key={item.item_id} style={{
+                          padding: '10px 14px', background: '#fffbeb', borderRadius: 10,
+                          border: '1px solid #fde68a',
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <span style={{ fontSize: 13, fontWeight: 600, color: '#111827' }}>{item.item_name}</span>
+                              <span style={{ fontSize: 12, color: '#6b7280', marginLeft: 8 }}>{item.form_number} · {item.department}</span>
+                            </div>
+                            <span style={{ fontSize: 13, fontWeight: 700, color: barColor, flexShrink: 0, marginLeft: 8 }}>
+                              {pct}%
+                            </span>
+                          </div>
+                          <div style={{ height: 6, background: '#fef3c7', borderRadius: 3, overflow: 'hidden' }}>
+                            <div style={{ height: '100%', width: `${pct}%`, background: barColor, borderRadius: 3, transition: 'width 0.5s ease' }} />
+                          </div>
+                          <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 4 }}>
+                            {item.quantity_fulfilled}/{item.quantity_approved} {item.unit} issued
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </Panel>
+            </div>
+          )}
 
           {/* Quick actions */}
           <div className="principal-panel" style={{ animationDelay: '0.23s' }}>
