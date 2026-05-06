@@ -30,7 +30,7 @@ export async function GET(req: NextRequest) {
 
   const { data, error } = await svc()
     .from('notices')
-    .select('id, title, content, target_audience, created_at, created_by')
+    .select('id, title, content, target_audience, created_at, posted_by')
     .eq('school_id', schoolId!)
     .order('created_at', { ascending: false })
     .range(offset, offset + limit - 1)
@@ -60,7 +60,7 @@ export async function POST(req: NextRequest) {
       title:           body.title.trim(),
       content:         body.content.trim(),
       target_audience: body.target_audience ?? 'all',
-      created_by:      auth.userId,
+      posted_by:       auth.userId,
     })
     .select('id, title, content, target_audience, created_at')
     .single()
