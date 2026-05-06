@@ -78,7 +78,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: false, error: 'OCR service unavailable' }, { status: 502 })
   }
 
-  const geminiData = await geminiRes.json()
+  const geminiData = await geminiRes.json() as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> }
   const rawText: string = geminiData.candidates?.[0]?.content?.parts?.[0]?.text ?? '{}'
   const cleanText = rawText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
 

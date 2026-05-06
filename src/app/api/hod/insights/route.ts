@@ -185,7 +185,7 @@ Return ONLY valid JSON:
       return NextResponse.json({ error: 'AI service unavailable' }, { status: 502 })
     }
 
-    const aiData = await aiRes.json()
+    const aiData = await aiRes.json() as { content?: Array<{ text?: string }> }
     const rawText: string = aiData.content?.[0]?.text ?? ''
     const jsonStr = rawText.replace(/^```json\s*/i, '').replace(/\s*```$/i, '').trim()
 

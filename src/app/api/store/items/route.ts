@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
   if (!WRITE_ROLES.has(auth.subRole ?? '')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const db   = svc()
-  const body = await req.json()
+  const body = await req.json() as Record<string, unknown>
 
   if (!body.name || !body.unit) return NextResponse.json({ error: 'name and unit required' }, { status: 400 })
 

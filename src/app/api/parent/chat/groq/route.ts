@@ -490,7 +490,7 @@ export async function POST(req: NextRequest) {
 
 async function handleVerification(
   svc: ReturnType<typeof createAdminSupabaseClient>,
-  parent: { phone: string; schoolId: string; studentIds: string[]; unauthorized?: never },
+  parent: { phone: string; schoolId: string; studentIds: string[]; unauthorized?: null },
   studentName: string,
   admissionNumber: string,
   originalMessage: string,
@@ -537,7 +537,7 @@ async function handleVerification(
         messages: [
           { role: 'system',    content: systemPrompt },
           { role: 'user',      content: originalMessage },
-          { role: 'assistant', content: null as unknown as string, tool_calls: [toolCall] },
+          { role: 'assistant', content: null as unknown as string, tool_calls: [{ ...toolCall, type: 'function' as const }] },
           {
             role:         'tool',
             tool_call_id: toolCall.id,

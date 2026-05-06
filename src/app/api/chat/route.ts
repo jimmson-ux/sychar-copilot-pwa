@@ -85,7 +85,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'AI service unavailable' }, { status: 502 })
   }
 
-  const data = await res.json()
+  const data = await res.json() as { content?: Array<{ text?: string }> }
   const text: string = data.content?.[0]?.text ?? ''
 
   return NextResponse.json({ reply: text })

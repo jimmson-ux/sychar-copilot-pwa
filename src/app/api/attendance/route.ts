@@ -39,7 +39,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json()
+    const body = await req.json() as { token?: string; records?: unknown[] }
     const { token, records } = body
 
     if (!token || !records || !Array.isArray(records) || records.length === 0) {

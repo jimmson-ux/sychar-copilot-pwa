@@ -4,6 +4,9 @@ export const dynamic = 'force-dynamic'
 
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+import dynamic from 'next/dynamic'
+
+const BankSlipScanner = dynamic(() => import('./components/BankSlipScanner'), { ssr: false })
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -110,6 +113,7 @@ export default function BursarDashboard() {
   const [fdseDate, setFdseDate]       = useState(new Date().toISOString().split('T')[0])
   const [fdseLoading, setFdseLoading] = useState(false)
   const [fdseMsg, setFdseMsg]         = useState<{ ok: boolean; text: string } | null>(null)
+  const [showScanner, setShowScanner] = useState(false)
   const [voteHeads, setVoteHeads]     = useState<VoteHead[]>([])
 
   // STK Push modal state
@@ -631,10 +635,32 @@ export default function BursarDashboard() {
         {tab === 'fdse' && (
           <div className="space-y-6 max-w-2xl">
             <div className="bg-white rounded-xl border p-6">
-              <h2 className="font-semibold text-gray-800 mb-1">Record FDSE Receipt</h2>
-              <p className="text-sm text-gray-500 mb-5">
+              <div className="flex items-start justify-between mb-1">
+                <h2 className="font-semibold text-gray-800">Record FDSE Receipt</h2>
+                <button
+                  type="button"
+                  onClick={() => setShowScanner(s => !s)}
+                  className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1 font-medium"
+                >
+                  📷 {showScanner ? 'Hide Scanner' : 'Scan Slip'}
+                </button>
+              </div>
+              <p className="text-sm text-gray-500 mb-3">
                 Auto-splits across RMI (49.42%), Tuition (25.33%), KICD (19.21%), Activity (6.03%)
               </p>
+              {showScanner && (
+                <div className="mb-4">
+                  <BankSlipScanner
+                    onClose={() => setShowScanner(false)}
+                    onExtracted={({ amount, reference, date, method }) => {
+                      if (amount != null) setFdseAmount(String(amount))
+                      if (reference)     setFdseRef(reference)
+                      if (date)          setFdseDate(date)
+                      if (method)        setFdseMethod(method)
+                    }}
+                  />
+                </div>
+              )}
               <form onSubmit={submitFdse} className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div>

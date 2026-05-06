@@ -146,7 +146,7 @@ Recent marks: ${marksSummary || 'No recent marks'}
     return NextResponse.json({ error: 'AI service unavailable' }, { status: 502 })
   }
 
-  const ai      = await resp.json()
+  const ai      = await resp.json() as { content?: Array<{ text?: string }> }
   const reply   = (ai.content?.[0]?.text ?? '').trim()
   const context = classifyContext(message)
   const sentiment = detectSentiment(message)

@@ -12,7 +12,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  const body = await req.json().catch(() => null)
+  const body = await req.json().catch(() => null) as Record<string, string> | null
   if (!body) {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
