@@ -11,6 +11,42 @@ const corsJson = (body: unknown, status = 200, origin: string | null = null) =>
 // ── Gemini prompts ────────────────────────────────────────────────────────────
 
 const GEMINI_PROMPTS: Record<string, string> = {
+  invoice: `You are reading a supplier invoice or delivery note from Kenya. Extract ALL information carefully.
+Return ONLY valid JSON — no markdown, no explanation:
+{
+  "document_type": "invoice",
+  "document_number": "",
+  "document_date": "YYYY-MM-DD or null",
+  "supplier": {
+    "name": "",
+    "phone": "",
+    "email": "",
+    "pin_number": "",
+    "address": ""
+  },
+  "school_name": "",
+  "items": [
+    { "item_name": "", "unit": "", "quantity": 0, "unit_price_kes": 0, "total_price_kes": 0 }
+  ],
+  "subtotal_kes": 0,
+  "tax_kes": 0,
+  "total_kes": 0,
+  "payment_terms": "",
+  "notes": "",
+  "confidence": 0.0,
+  "warnings": []
+}
+IMPORTANT RULES:
+- All prices in KES as numbers (remove commas: 1,250.00 → 1250)
+- unit: standardise to: pcs, boxes, reams, litres, kg, pairs, sets
+- If any field is unclear, include it in warnings array
+- confidence: your overall confidence 0.0-1.0
+- If this is BOTH invoice AND delivery note, set document_type to invoice`,
+
+  delivery_note: `You are reading a delivery note (LPO receipt) from a Kenyan supplier.
+Return identical JSON structure as the invoice prompt. Focus on quantities delivered and any shortages.
+Return ONLY valid JSON — no markdown, no explanation.`,
+
   ocr_apology_letter: `You are reading a student apology letter from a Kenyan secondary school.
 Extract ALL of the following fields. If a field is not visible, return null for that field.
 Return ONLY a JSON object with these exact keys:
@@ -163,8 +199,163 @@ No markdown. No explanation. JSON only.`,
 const ALLOWED_TASKS = new Set(Object.keys(GEMINI_PROMPTS))
 
 const ALLOWED_MIME_TYPES = new Set([
-  'image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/gif',
+  'image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/gif', 'application/pdf',
 ])
+
+// ── Procurement document OCR handler ─────────────────────────────────────────
+// Called server-to-server from /api/procurement/upload (service role)
+
+async function handleProcurementOCR(
+  serviceClient: ReturnType<typeof createClient>,
+  documentId: string,
+  schoolId: string,
+  filePath: string,
+  bucket: string,
+  origin: string | null
+): Promise<Response> {
+  try {
+    // 1. Fetch file from storage
+    const { data: fileData, error: dlErr } = await serviceClient.storage
+      .from(bucket)
+      .download(filePath)
+    if (dlErr || !fileData) {
+      console.error('[process-document] download error:', dlErr?.message)
+      await serviceClient.from('procurement_documents')
+        .update({ ocr_status: 'failed' }).eq('id', documentId)
+      return corsJson({ error: 'File download failed' }, 502, origin)
+    }
+
+    // 2. Convert to base64
+    const arrayBuffer = await fileData.arrayBuffer()
+    const bytes       = new Uint8Array(arrayBuffer)
+    const chunks: string[] = []
+    const chunkSize = 8192
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      chunks.push(String.fromCharCode(...bytes.subarray(i, i + chunkSize)))
+    }
+    const base64   = btoa(chunks.join(''))
+    const mimeType = fileData.type || 'image/jpeg'
+
+    // 3. Call Gemini
+    const prompt = GEMINI_PROMPTS['invoice']
+    const geminiRes = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${Deno.env.get('GEMINI_API_KEY')}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [
+            { inline_data: { mime_type: mimeType, data: base64 } },
+            { text: prompt },
+          ]}],
+          generationConfig: { response_mime_type: 'application/json', temperature: 0.1 },
+        }),
+      }
+    )
+
+    let parsed: Record<string, unknown> = {}
+    if (geminiRes.ok) {
+      const gd = await geminiRes.json()
+      const rawText  = gd.candidates?.[0]?.content?.parts?.[0]?.text ?? '{}'
+      const cleanText = rawText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
+      try { parsed = JSON.parse(cleanText) } catch { parsed = { raw_text: cleanText } }
+    } else {
+      console.error('[process-document] Gemini error:', geminiRes.status)
+    }
+
+    // 4. Find or create supplier
+    let supplierId: string | null = null
+    const supplierRaw = parsed.supplier as Record<string, string> | null
+    if (supplierRaw?.name) {
+      const normName = supplierRaw.name.toLowerCase().trim().replace(/\s+/g, ' ')
+      const { data: existingSupplier } = await serviceClient
+        .from('suppliers')
+        .upsert({
+          school_id:       schoolId,
+          name:            supplierRaw.name,
+          normalised_name: normName,
+          phone:           supplierRaw.phone ?? null,
+          email:           supplierRaw.email ?? null,
+          pin_number:      supplierRaw.pin_number ?? null,
+          physical_address: supplierRaw.address ?? null,
+        }, { onConflict: 'school_id,normalised_name' })
+        .select('id')
+        .single()
+      supplierId = (existingSupplier as { id?: string } | null)?.id ?? null
+    }
+
+    // 5. Update procurement document
+    const parsedDate  = typeof parsed.document_date === 'string' ? parsed.document_date : null
+    const parsedTotal = typeof parsed.total_kes === 'number' ? parsed.total_kes : null
+    const parsedTax   = typeof parsed.tax_kes   === 'number' ? parsed.tax_kes   : null
+    const warnings    = Array.isArray(parsed.warnings) ? parsed.warnings : []
+
+    await serviceClient.from('procurement_documents').update({
+      ocr_status:          'completed',
+      ocr_confidence:      parsed.confidence ?? null,
+      raw_ocr_text:        JSON.stringify(parsed),
+      extracted_date:      parsedDate,
+      extracted_total_kes: parsedTotal,
+      extracted_tax_kes:   parsedTax,
+      extraction_warnings: warnings,
+      supplier_id:         supplierId,
+      supplier_name:       supplierRaw?.name ?? null,
+      document_number:     parsed.document_number ?? null,
+      workflow_status:     'ocr_complete',
+    }).eq('id', documentId)
+
+    // 6. Insert line items
+    const items = Array.isArray(parsed.items) ? parsed.items as Record<string, unknown>[] : []
+    if (items.length > 0) {
+      await serviceClient.from('procurement_line_items').insert(
+        items.map(item => ({
+          school_id:         schoolId,
+          document_id:       documentId,
+          item_name:         String(item.item_name ?? ''),
+          unit:              item.unit ? String(item.unit) : null,
+          quantity_invoiced: Number(item.quantity) || 0,
+          unit_price_kes:    Number(item.unit_price_kes) || 0,
+          tax_kes:           0,
+        }))
+      )
+    }
+
+    // 7. Notify: flag significant price increases to principal
+    const { data: flaggedItems } = await serviceClient
+      .from('procurement_line_items')
+      .select('item_name, unit_price_kes, last_price_kes, price_variance_pct, price_flag')
+      .eq('document_id', documentId)
+      .eq('price_flag', 'significant_increase')
+
+    if (flaggedItems && flaggedItems.length > 0) {
+      await serviceClient.from('alerts').insert({
+        school_id: schoolId,
+        type:      'procurement',
+        severity:  'warning',
+        title:     `⚠️ Price alert: ${flaggedItems.length} item(s) significantly more expensive than last purchase`,
+        detail:    {
+          document_id: documentId,
+          items: (flaggedItems as Record<string, unknown>[]).map(i => ({
+            name: i.item_name,
+            variance_pct: i.price_variance_pct,
+          })),
+        },
+      })
+    }
+
+    return corsJson({
+      success:    true,
+      documentId,
+      itemsFound: items.length,
+      confidence: parsed.confidence ?? null,
+    }, 200, origin)
+  } catch (err) {
+    console.error('[process-document] procurement OCR error:', err)
+    await serviceClient.from('procurement_documents')
+      .update({ ocr_status: 'failed' }).eq('id', documentId).then(() => {}, () => {})
+    return corsJson({ error: 'OCR processing failed' }, 500, origin)
+  }
+}
 
 // ── Main handler ──────────────────────────────────────────────────────────────
 
@@ -214,6 +405,19 @@ serve(async (req) => {
     body = await req.json()
   } catch {
     return corsJson({ error: 'Invalid JSON body' }, 400, origin)
+  }
+
+  // ── 3a. Procurement server-to-server path ────────────────────────────────────
+  // Invoked by /api/procurement/upload with documentId + filePath + bucket
+  if (typeof body.documentId === 'string' && typeof body.filePath === 'string' && typeof body.bucket === 'string') {
+    return handleProcurementOCR(
+      serviceClient,
+      body.documentId,
+      staff.school_id,
+      body.filePath,
+      body.bucket,
+      origin,
+    )
   }
 
   const { base64, mimeType, task } = body as {
