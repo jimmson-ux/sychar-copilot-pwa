@@ -9,7 +9,9 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import Groq from 'groq-sdk'
-import { generateText, gateway } from 'ai'
+import { generateText } from 'ai'
+import { anthropic } from '@ai-sdk/anthropic'
+import { google } from '@ai-sdk/google'
 import { requireParentAuth } from '@/middleware/verifyParentJWT'
 import { createAdminSupabaseClient } from '@/lib/supabase-server'
 
@@ -62,8 +64,8 @@ async function callGroq(
   }
 }
 
-// AI Gateway: Gemini Flash → Claude Haiku → GPT-5.4 (automatic failover)
-async function callGateway(
+// Direct provider fallback: Gemini Flash → Claude Haiku
+async function callDirectFallback(
   systemPrompt: string,
   history: ConversationMessage[],
   userMessage: string,
@@ -76,27 +78,49 @@ async function callGateway(
     { role: 'user' as const, content: userMessage },
   ]
 
-  const { text } = await generateText({
-    model:  gateway('google/gemini-2.0-flash'),
-    system: systemPrompt,
-    messages,
-    maxOutputTokens: 300,
-    providerOptions: {
-      gateway: {
-        // Automatic failover across 3 more providers
-        models: [
-          'anthropic/claude-haiku-4.5',
-          'openai/gpt-5.4',
-        ],
-        tags: ['feature:parent-chat'],
+  const providers: Array<{ fn: () => Promise<string>; name: string }> = [
+    {
+      name: 'gemini',
+      fn: async () => {
+        const { text } = await generateText({
+          model: google('gemini-2.0-flash'),
+          system: systemPrompt,
+          messages,
+          maxOutputTokens: 300,
+        })
+        return text
       },
     },
-  })
+    {
+      name: 'claude',
+      fn: async () => {
+        const { text } = await generateText({
+          model: anthropic('claude-haiku-4-5-20251001'),
+          system: systemPrompt,
+          messages,
+          maxOutputTokens: 300,
+        })
+        return text
+      },
+    },
+  ]
 
-  return { reply: text.trim(), provider: 'gateway' }
+  for (const p of providers) {
+    try {
+      const text = await p.fn()
+      return { reply: text.trim(), provider: p.name }
+    } catch (err) {
+      if (!isRateLimitOrOverload(err)) throw err
+    }
+  }
+
+  return {
+    reply:    'Our AI assistant is temporarily busy. Please try again in a moment.',
+    provider: 'none',
+  }
 }
 
-// ── Fallback orchestrator: Groq first, then AI Gateway ────────────────────────
+// ── Fallback orchestrator: Groq first, then direct providers ─────────────────
 
 async function callWithFallback(
   systemPrompt: string,
@@ -109,16 +133,8 @@ async function callWithFallback(
     if (!isRateLimitOrOverload(err)) throw err
   }
 
-  // Groq rate-limited → AI Gateway with 3-provider fallback
-  try {
-    return await callGateway(systemPrompt, history, userMessage)
-  } catch (err) {
-    console.error('[parent-chat] all AI providers failed:', err)
-    return {
-      reply:    'Our AI assistant is temporarily busy. Please try again in a moment.',
-      provider: 'none',
-    }
-  }
+  // Groq rate-limited → direct provider fallback (Gemini → Claude)
+  return callDirectFallback(systemPrompt, history, userMessage)
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -300,18 +316,25 @@ async function extractDetailsWithFallback(
   ].join('\n')
 
   try {
-    const { text } = await generateText({
-      model:  gateway('google/gemini-2.0-flash'),
-      system: 'You are a JSON extraction assistant. Return only valid JSON.',
-      prompt: buildExtractionPrompt(conversation),
-      maxOutputTokens: 150,
-      providerOptions: {
-        gateway: {
-          models: ['anthropic/claude-haiku-4.5', 'openai/gpt-5.4'],
-          tags:   ['feature:parent-verification'],
-        },
-      },
-    })
+    // Try Gemini first, fall back to Claude Haiku for JSON extraction
+    let text: string
+    try {
+      const r = await generateText({
+        model:           google('gemini-2.0-flash'),
+        system:          'You are a JSON extraction assistant. Return only valid JSON.',
+        prompt:          buildExtractionPrompt(conversation),
+        maxOutputTokens: 150,
+      })
+      text = r.text
+    } catch {
+      const r = await generateText({
+        model:           anthropic('claude-haiku-4-5-20251001'),
+        system:          'You are a JSON extraction assistant. Return only valid JSON.',
+        prompt:          buildExtractionPrompt(conversation),
+        maxOutputTokens: 150,
+      })
+      text = r.text
+    }
     const json = text.match(/\{[\s\S]*\}/)?.[0]
     if (!json) return null
     const parsed = JSON.parse(json) as { student_name?: string | null; admission_number?: string | null }

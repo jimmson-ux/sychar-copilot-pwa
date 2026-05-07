@@ -9,7 +9,9 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/requireAuth'
 import { createAdminSupabaseClient } from '@/lib/supabase-server'
-import { generateText, gateway } from 'ai'
+import { generateText } from 'ai'
+import { anthropic } from '@ai-sdk/anthropic'
+import { google } from '@ai-sdk/google'
 
 const ALLOWED = new Set(['principal','deputy_principal','deputy_principal_admin','deputy_principal_discipline'])
 
@@ -88,17 +90,23 @@ Include: date, salutation, formal statement of suspension, reason, duration, con
 Format as plain text with proper paragraphs. No markdown. No placeholders in square brackets.`
 
   try {
-    const { text: letterText } = await generateText({
-      model: gateway('anthropic/claude-sonnet-4.6'),
-      prompt,
-      maxOutputTokens: 1000,
-      providerOptions: {
-        gateway: {
-          models: ['openai/gpt-5.4'],
-          tags:   ['feature:suspension-letter'],
-        },
-      },
-    })
+    // Primary: Claude Sonnet — fallback: Gemini Flash
+    let letterText: string
+    try {
+      const r = await generateText({
+        model: anthropic('claude-sonnet-4-6'),
+        prompt,
+        maxOutputTokens: 1000,
+      })
+      letterText = r.text
+    } catch {
+      const r = await generateText({
+        model: google('gemini-2.0-flash'),
+        prompt,
+        maxOutputTokens: 1000,
+      })
+      letterText = r.text
+    }
     const letterTextTrimmed = letterText.trim()
 
     // Store draft — table may not exist yet; fail gracefully

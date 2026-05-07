@@ -8,7 +8,9 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/requireAuth'
 import { createAdminSupabaseClient } from '@/lib/supabase-server'
-import { generateText, gateway } from 'ai'
+import { generateText } from 'ai'
+import { anthropic } from '@ai-sdk/anthropic'
+import { google } from '@ai-sdk/google'
 
 const HOD_ROLES = new Set([
   'hod_sciences','hod_mathematics','hod_languages',
@@ -18,19 +20,22 @@ const HOD_ROLES = new Set([
 ])
 
 async function runAI(prompt: string): Promise<string> {
-  const { text } = await generateText({
-    model: gateway('anthropic/claude-haiku-4.5'),
-    prompt,
-    maxOutputTokens: 1200,
-    providerOptions: {
-      gateway: {
-        // Failover chain: Haiku → Gemini Flash → GPT-5.4
-        models: ['google/gemini-2.0-flash', 'openai/gpt-5.4'],
-        tags:   ['feature:hod-intelligence'],
-      },
-    },
-  })
-  return text
+  // Primary: Claude Haiku — fallback: Gemini Flash
+  try {
+    const { text } = await generateText({
+      model:           anthropic('claude-haiku-4-5-20251001'),
+      prompt,
+      maxOutputTokens: 1200,
+    })
+    return text
+  } catch {
+    const { text } = await generateText({
+      model:           google('gemini-2.0-flash'),
+      prompt,
+      maxOutputTokens: 1200,
+    })
+    return text
+  }
 }
 
 export async function GET() {
