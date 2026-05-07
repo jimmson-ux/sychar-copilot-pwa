@@ -1,14 +1,14 @@
 // GET /api/hod/class-intelligence
 // Returns AI-generated class attention ranking for the HOD's department.
-// Uses marks + attendance + compliance data to rank classes by urgency.
-// POST (no body) — forces a fresh analysis via Claude.
+// Uses marks + attendance data to rank classes by urgency.
+// POST (no body) — forces a fresh analysis.
 
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/requireAuth'
 import { createAdminSupabaseClient } from '@/lib/supabase-server'
-import Anthropic from '@anthropic-ai/sdk'
+import { generateText, gateway } from 'ai'
 
 const HOD_ROLES = new Set([
   'hod_sciences','hod_mathematics','hod_languages',
@@ -16,6 +16,22 @@ const HOD_ROLES = new Set([
   'hod_arts','hod_social_sciences','hod_technical','hod_pathways',
   'principal','deputy_principal','dean_of_studies',
 ])
+
+async function runAI(prompt: string): Promise<string> {
+  const { text } = await generateText({
+    model: gateway('anthropic/claude-haiku-4.5'),
+    prompt,
+    maxOutputTokens: 1200,
+    providerOptions: {
+      gateway: {
+        // Failover chain: Haiku → Gemini Flash → GPT-5.4
+        models: ['google/gemini-2.0-flash', 'openai/gpt-5.4'],
+        tags:   ['feature:hod-intelligence'],
+      },
+    },
+  })
+  return text
+}
 
 export async function GET() {
   const auth = await requireAuth()
@@ -35,7 +51,6 @@ export async function GET() {
 
   const dept = myRecord?.department ?? null
 
-  // Latest stored intelligence snapshot
   const { data: snapshots } = await db
     .from('hod_intelligence_snapshots')
     .select('*')
@@ -48,12 +63,11 @@ export async function GET() {
     return NextResponse.json({ snapshots, department: dept, from_cache: true })
   }
 
-  // No snapshot yet — return empty guidance
   return NextResponse.json({
-    snapshots:     [],
-    department:    dept,
-    from_cache:    false,
-    message:       'No intelligence snapshot yet. Click Refresh Intelligence to generate.',
+    snapshots:  [],
+    department: dept,
+    from_cache: false,
+    message:    'No intelligence snapshot yet. Click Refresh Intelligence to generate.',
   })
 }
 
@@ -75,7 +89,6 @@ export async function POST(req: NextRequest) {
 
   const dept = myRecord?.department ?? null
 
-  // Gather subject assignments for this department
   const { data: assignments } = await db
     .from('teacher_subject_assignments')
     .select('teacher_id,subject_name,class_levels,curriculum_type')
@@ -90,7 +103,6 @@ export async function POST(req: NextRequest) {
     }, { status: 422 })
   }
 
-  // Get distinct class-streams for this department's subjects
   const { data: classData } = await db
     .from('students')
     .select('class_name,stream_name')
@@ -101,7 +113,6 @@ export async function POST(req: NextRequest) {
     (classData ?? []).map(c => [`${c.class_name}-${c.stream_name}`, c])
   ).values()]
 
-  // Marks for this department's subjects
   const subjectNames = [...new Set(assignments.map(a => a.subject_name))]
   const { data: marksData } = await db
     .from('marks')
@@ -110,22 +121,21 @@ export async function POST(req: NextRequest) {
     .in('subject_name', subjectNames)
     .not('percentage', 'is', null)
 
-  // Attendance last 14 days
+  // attendance_records has class_name TEXT
   const since14 = new Date(Date.now() - 14 * 86400000).toISOString().split('T')[0]
   const { data: attData } = await db
-    .from('attendance')
-    .select('student_id,status,date,class_name,stream_name')
+    .from('attendance_records')
+    .select('student_id,status,date,class_name')
     .eq('school_id', auth.schoolId)
     .gte('date', since14)
 
-  // Build class summaries
   const classSummaries = classes.map(cls => {
     const classKey = `${cls.class_name} ${cls.stream_name}`
     const classMarks = (marksData ?? []).filter(
       m => m.class_name === cls.class_name && m.stream_name === cls.stream_name
     )
     const classAtt = (attData ?? []).filter(
-      a => a.class_name === cls.class_name && a.stream_name === cls.stream_name
+      a => a.class_name === classKey || a.class_name === cls.class_name
     )
     const avgScore = classMarks.length
       ? Math.round(classMarks.reduce((s, m) => s + (m.percentage ?? 0), 0) / classMarks.length)
@@ -153,33 +163,26 @@ Return ONLY JSON array:
 }]`
 
   try {
-    const claude = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY ?? '' })
-    const resp = await claude.messages.create({
-      model:      'claude-haiku-4-5-20251001',
-      max_tokens: 1200,
-      messages:   [{ role: 'user', content: prompt }],
-    })
-    const raw   = (resp.content[0] as { text: string }).text ?? ''
+    const raw   = await runAI(prompt)
     const match = raw.match(/\[[\s\S]*\]/)
-    if (!match) throw new Error('No JSON array in Claude response')
+    if (!match) throw new Error('No JSON array in AI response')
     const snapshots = JSON.parse(match[0]) as Record<string, unknown>[]
 
-    // Store snapshot — table may not exist yet; fail gracefully
     try {
       await db.from('hod_intelligence_snapshots').upsert(
         snapshots.map(s => ({
-          school_id:   auth.schoolId,
-          department:  dept,
-          class_name:  String(s.class ?? '').split(' ').slice(0, -1).join(' '),
-          stream_name: String(s.class ?? '').split(' ').at(-1),
-          urgency:     s.urgency,
-          avg_score:   s.avg_score,
-          absence_rate: s.absence_rate,
-          recommendation:  s.recommendation,
-          exam_advice:     s.exam_advice,
+          school_id:        auth.schoolId,
+          department:       dept,
+          class_name:       String(s.class ?? '').split(' ').slice(0, -1).join(' '),
+          stream_name:      String(s.class ?? '').split(' ').at(-1),
+          urgency:          s.urgency,
+          avg_score:        s.avg_score,
+          absence_rate:     s.absence_rate,
+          recommendation:   s.recommendation,
+          exam_advice:      s.exam_advice,
           timetable_advice: s.timetable_advice ?? null,
-          computed_at: new Date().toISOString(),
-          computed_by: myRecord?.id ?? null,
+          computed_at:      new Date().toISOString(),
+          computed_by:      myRecord?.id ?? null,
         })),
         { onConflict: 'school_id,department,class_name,stream_name' }
       )

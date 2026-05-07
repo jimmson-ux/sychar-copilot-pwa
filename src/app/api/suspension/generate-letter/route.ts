@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/requireAuth'
 import { createAdminSupabaseClient } from '@/lib/supabase-server'
-import Anthropic from '@anthropic-ai/sdk'
+import { generateText, gateway } from 'ai'
 
 const ALLOWED = new Set(['principal','deputy_principal','deputy_principal_admin','deputy_principal_discipline'])
 
@@ -88,13 +88,18 @@ Include: date, salutation, formal statement of suspension, reason, duration, con
 Format as plain text with proper paragraphs. No markdown. No placeholders in square brackets.`
 
   try {
-    const claude = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY ?? '' })
-    const resp = await claude.messages.create({
-      model:      'claude-sonnet-4-6',
-      max_tokens: 1000,
-      messages:   [{ role: 'user', content: prompt }],
+    const { text: letterText } = await generateText({
+      model: gateway('anthropic/claude-sonnet-4.6'),
+      prompt,
+      maxOutputTokens: 1000,
+      providerOptions: {
+        gateway: {
+          models: ['openai/gpt-5.4'],
+          tags:   ['feature:suspension-letter'],
+        },
+      },
     })
-    const letterText = (resp.content[0] as { text: string }).text.trim()
+    const letterTextTrimmed = letterText.trim()
 
     // Store draft — table may not exist yet; fail gracefully
     let draftId: string | null = null
@@ -110,7 +115,7 @@ Format as plain text with proper paragraphs. No markdown. No placeholders in squ
           return_date:     returnDate,
           reason_summary:  body.reason_summary,
           rules_violated:  body.rules_violated ?? [],
-          letter_text:     letterText,
+          letter_text:     letterTextTrimmed,
           status:          'draft',
           drafted_by:      auth.userId,
           created_at:      new Date().toISOString(),
@@ -121,7 +126,7 @@ Format as plain text with proper paragraphs. No markdown. No placeholders in squ
     } catch { /* table may not exist */ }
 
     return NextResponse.json({
-      letter_text: letterText,
+      letter_text: letterTextTrimmed,
       draft_id:    draftId,
       student:     { full_name: student.full_name, class: `${student.class_name} ${student.stream_name}` },
       meta: {
