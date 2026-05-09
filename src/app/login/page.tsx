@@ -133,10 +133,11 @@ export default function LoginPage() {
     setGoogleLoading(true)
     try {
       const supabase = createClient()
+      const origin = process.env.NEXT_PUBLIC_APP_URL ?? window.location.origin
       const { error: oauthErr } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
+          redirectTo: `${origin}/auth/callback`,
           queryParams: { access_type: 'offline', prompt: 'select_account' },
         },
       })
@@ -288,9 +289,10 @@ export default function LoginPage() {
     setResetStatus('sending')
     try {
       const supabase = createClient()
+      const origin = process.env.NEXT_PUBLIC_APP_URL ?? window.location.origin
       const { error: resetErr } = await supabase.auth.resetPasswordForEmail(
         resetEmail.trim().toLowerCase(),
-        { redirectTo: `${window.location.origin}/auth/callback?next=/change-password` },
+        { redirectTo: `${origin}/auth/callback?next=/change-password` },
       )
       if (resetErr) {
         setError(resetErr.message)
@@ -437,6 +439,7 @@ export default function LoginPage() {
                 {TABS.map(t => (
                   <button
                     key={t.id}
+                    type="button"
                     className={`tab-btn${tab === t.id ? ' active' : ''}`}
                     onClick={() => switchTab(t.id)}
                   >
@@ -453,13 +456,13 @@ export default function LoginPage() {
                     Sign in with your school Google Workspace account. Fastest and most secure option.
                   </div>
                   {error && <ErrorBox msg={error} />}
-                  <button className="google-btn" onClick={handleGoogle} disabled={googleLoading}>
+                  <button type="button" className="google-btn" onClick={handleGoogle} disabled={googleLoading}>
                     {googleLoading ? <Spinner /> : <GoogleIcon />}
                     {googleLoading ? 'Redirecting to Google…' : 'Sign in with Google'}
                   </button>
                   <div style={{ textAlign: 'center', fontSize: 12, color: '#9ca3af' }}>
                     Don&apos;t have a Google account?{' '}
-                    <button onClick={() => switchTab('password')} style={{ background: 'none', border: 'none', color: primary, cursor: 'pointer', fontWeight: 600, fontSize: 12, padding: 0, fontFamily: 'inherit' }}>
+                    <button type="button" onClick={() => switchTab('password')} style={{ background: 'none', border: 'none', color: primary, cursor: 'pointer', fontWeight: 600, fontSize: 12, padding: 0, fontFamily: 'inherit' }}>
                       Use password instead
                     </button>
                   </div>
@@ -509,6 +512,7 @@ export default function LoginPage() {
                         A password reset link has been sent to <strong>{resetEmail}</strong>. Click the link to set your new password.
                       </div>
                       <button
+                        type="button"
                         onClick={() => { setPwMode('login'); setResetStatus('idle'); setError('') }}
                         style={{ fontSize: 12, color: primary, background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600, fontFamily: 'inherit' }}
                       >
@@ -578,7 +582,7 @@ export default function LoginPage() {
                         Check the push notification on your other device and tap <strong>✅ Approve</strong>.
                       </div>
                       <div style={{ width: 28, height: 28, border: `3px solid ${primary}`, borderTopColor: 'transparent', borderRadius: '50%', margin: '0 auto', animation: 'spin 0.8s linear infinite' }} />
-                      <button onClick={() => switchTab('push')} style={{ marginTop: 20, fontSize: 12, color: '#9ca3af', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>
+                      <button type="button" onClick={() => switchTab('push')} style={{ marginTop: 20, fontSize: 12, color: '#9ca3af', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>
                         Cancel
                       </button>
                     </div>
@@ -590,10 +594,10 @@ export default function LoginPage() {
                         You have no devices with push enabled. Use the Authenticator or Emergency Code tab instead.
                       </div>
                       <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
-                        <button onClick={() => switchTab('totp')} className="login-btn" style={{ width: 'auto', padding: '10px 16px', fontSize: 13 }}>
+                        <button type="button" onClick={() => switchTab('totp')} className="login-btn" style={{ width: 'auto', padding: '10px 16px', fontSize: 13 }}>
                           🔐 Authenticator
                         </button>
-                        <button onClick={() => switchTab('emergency')} className="login-btn" style={{ width: 'auto', padding: '10px 16px', fontSize: 13, background: 'linear-gradient(135deg, #7c3aed, #db2777)' }}>
+                        <button type="button" onClick={() => switchTab('emergency')} className="login-btn" style={{ width: 'auto', padding: '10px 16px', fontSize: 13, background: 'linear-gradient(135deg, #7c3aed, #db2777)' }}>
                           🆘 Emergency
                         </button>
                       </div>

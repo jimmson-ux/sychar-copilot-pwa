@@ -112,7 +112,15 @@ export async function POST(
 
   // Set the password via Supabase admin API
   const { error: pwErr } = await db.auth.admin.updateUserById(staff.user_id, { password: body.password })
-  if (pwErr) return NextResponse.json({ error: pwErr.message }, { status: 500 })
+  if (pwErr) {
+    const isSamePassword = pwErr.message.toLowerCase().includes('different') || pwErr.message.toLowerCase().includes('same')
+    return NextResponse.json(
+      { error: isSamePassword
+          ? 'Please choose a password you have not used before.'
+          : 'Could not set password — please try again.' },
+      { status: isSamePassword ? 422 : 500 }
+    )
+  }
 
   // Mark force_password_change = false and record onboard_used_at
   await db.from('staff_records').update({

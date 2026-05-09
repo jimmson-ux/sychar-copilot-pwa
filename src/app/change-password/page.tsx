@@ -87,7 +87,12 @@ export default function ChangePasswordPage() {
       const { error: updErr } = await supabase.auth.updateUser({ password: newPw })
 
       if (updErr) {
-        setError(updErr.message)
+        const msg = updErr.message.toLowerCase()
+        setError(
+          msg.includes('different') || msg.includes('same')
+            ? 'Your new password must be different from your current password. Please choose a new one.'
+            : updErr.message
+        )
         setLoading(false)
         return
       }
