@@ -1,12 +1,16 @@
 -- School documents (calendar PDFs, ministry circulars, policies).
 -- Uploaded by Principal / Deputy Admin; visible to all staff in the same school.
 
-create type if not exists public.school_doc_kind as enum (
-  'school_calendar',
-  'ministry_circular',
-  'policy',
-  'other'
-);
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'school_doc_kind' AND typnamespace = 'public'::regnamespace) THEN
+    CREATE TYPE public.school_doc_kind AS ENUM (
+      'school_calendar',
+      'ministry_circular',
+      'policy',
+      'other'
+    );
+  END IF;
+END $$;
 
 create table if not exists public.school_documents (
   id uuid primary key default gen_random_uuid(),
@@ -14,13 +18,13 @@ create table if not exists public.school_documents (
   kind public.school_doc_kind not null,
   title text not null,
   description text,
-  /** Path inside the `school-documents` storage bucket. */
+  /* Path inside the `school-documents` storage bucket. */
   storage_path text not null,
   mime_type text,
   size_bytes bigint,
   uploaded_by uuid references public.staff_records(id) on delete set null,
   uploaded_at timestamptz not null default now(),
-  /** Optional issue/effective date (e.g. circular date). */
+  /* Optional issue/effective date (e.g. circular date). */
   effective_date date
 );
 

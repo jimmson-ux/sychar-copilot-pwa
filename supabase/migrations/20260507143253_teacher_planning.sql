@@ -19,6 +19,14 @@ create table if not exists public.lesson_plans (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+-- Ensure columns exist on pre-existing table
+alter table public.lesson_plans
+  add column if not exists lesson_date date,
+  add column if not exists sub_topic text,
+  add column if not exists reviewer_id uuid,
+  add column if not exists reviewer_note text,
+  add column if not exists reviewed_at timestamptz;
+
 create index if not exists lesson_plans_school_teacher_idx
   on public.lesson_plans(school_id, teacher_id, lesson_date desc nulls last);
 create index if not exists lesson_plans_school_status_idx
@@ -43,6 +51,23 @@ create table if not exists public.schemes_of_work (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+-- Ensure columns exist on pre-existing schemes_of_work table
+alter table public.schemes_of_work
+  add column if not exists school_id uuid,
+  add column if not exists teacher_id uuid,
+  add column if not exists subject text,
+  add column if not exists grade text,
+  add column if not exists curriculum text,
+  add column if not exists term int,
+  add column if not exists year int,
+  add column if not exists title text,
+  add column if not exists body_md text,
+  add column if not exists status text default 'draft',
+  add column if not exists reviewer_id uuid,
+  add column if not exists reviewer_note text,
+  add column if not exists reviewed_at timestamptz,
+  add column if not exists updated_at timestamptz default now();
+
 create index if not exists schemes_of_work_school_teacher_idx
   on public.schemes_of_work(school_id, teacher_id, year desc, term desc);
 
@@ -65,6 +90,23 @@ create table if not exists public.record_of_work (
   reviewed_at timestamptz,
   created_at timestamptz not null default now()
 );
+-- Ensure columns exist on pre-existing record_of_work table
+alter table public.record_of_work
+  add column if not exists school_id uuid,
+  add column if not exists teacher_id uuid,
+  add column if not exists subject text,
+  add column if not exists grade text,
+  add column if not exists week_starting date,
+  add column if not exists lesson_date date,
+  add column if not exists topic text,
+  add column if not exists sub_topic text,
+  add column if not exists coverage_pct int,
+  add column if not exists remarks text,
+  add column if not exists status text default 'draft',
+  add column if not exists reviewer_id uuid,
+  add column if not exists reviewer_note text,
+  add column if not exists reviewed_at timestamptz;
+
 create index if not exists record_of_work_school_teacher_idx
   on public.record_of_work(school_id, teacher_id, lesson_date desc);
 
@@ -90,13 +132,13 @@ alter table public.record_of_work  enable row level security;
 drop policy if exists "Staff read own school lesson plans" on public.lesson_plans;
 create policy "Staff read own school lesson plans"
   on public.lesson_plans for select
-  using (school_id in (select school_id from public.staff_records where user_id = auth.uid()::text));
+  using (school_id::text in (select school_id::text from public.staff_records where user_id = auth.uid()::text));
 
 drop policy if exists "Teacher manage own lesson plans" on public.lesson_plans;
 create policy "Teacher manage own lesson plans"
   on public.lesson_plans for all
-  using (teacher_id in (select id from public.staff_records where user_id = auth.uid()::text))
-  with check (teacher_id in (select id from public.staff_records where user_id = auth.uid()::text));
+  using (teacher_id::text in (select id::text from public.staff_records where user_id = auth.uid()::text))
+  with check (teacher_id::text in (select id::text from public.staff_records where user_id = auth.uid()::text));
 
 drop policy if exists "Reviewers update lesson plans" on public.lesson_plans;
 create policy "Reviewers update lesson plans"
@@ -117,13 +159,13 @@ create policy "Reviewers update lesson plans"
 drop policy if exists "Staff read own school schemes" on public.schemes_of_work;
 create policy "Staff read own school schemes"
   on public.schemes_of_work for select
-  using (school_id in (select school_id from public.staff_records where user_id = auth.uid()::text));
+  using (school_id::text in (select school_id::text from public.staff_records where user_id = auth.uid()::text));
 
 drop policy if exists "Teacher manage own schemes" on public.schemes_of_work;
 create policy "Teacher manage own schemes"
   on public.schemes_of_work for all
-  using (teacher_id in (select id from public.staff_records where user_id = auth.uid()::text))
-  with check (teacher_id in (select id from public.staff_records where user_id = auth.uid()::text));
+  using (teacher_id::text in (select id::text from public.staff_records where user_id = auth.uid()::text))
+  with check (teacher_id::text in (select id::text from public.staff_records where user_id = auth.uid()::text));
 
 drop policy if exists "Reviewers update schemes" on public.schemes_of_work;
 create policy "Reviewers update schemes"
@@ -144,13 +186,13 @@ create policy "Reviewers update schemes"
 drop policy if exists "Staff read own school record of work" on public.record_of_work;
 create policy "Staff read own school record of work"
   on public.record_of_work for select
-  using (school_id in (select school_id from public.staff_records where user_id = auth.uid()::text));
+  using (school_id::text in (select school_id::text from public.staff_records where user_id = auth.uid()::text));
 
 drop policy if exists "Teacher manage own record of work" on public.record_of_work;
 create policy "Teacher manage own record of work"
   on public.record_of_work for all
-  using (teacher_id in (select id from public.staff_records where user_id = auth.uid()::text))
-  with check (teacher_id in (select id from public.staff_records where user_id = auth.uid()::text));
+  using (teacher_id::text in (select id::text from public.staff_records where user_id = auth.uid()::text))
+  with check (teacher_id::text in (select id::text from public.staff_records where user_id = auth.uid()::text));
 
 drop policy if exists "Reviewers update record of work" on public.record_of_work;
 create policy "Reviewers update record of work"
