@@ -7,8 +7,12 @@ export const dynamic = 'force-dynamic'
 /**
  * POST /api/parent/wallet/topup
  * Body: { student_id: string, amount: number }
- * Initiates an M-Pesa STK Push for wallet topup.
- * Amount range: KES 50–10,000.
+ *
+ * Flow:
+ *   1. Insert pending record into mpesa_callbacks (stores student/school context)
+ *   2. Initiate STK Push via Daraja
+ *   3. Safaricom calls /api/parent/mpesa/callback on completion
+ *      → callback handler calls increment_wallet_balance() which triggers credit_wallet()
  */
 export async function POST(req: NextRequest) {
   const parent = await requireParentAuth(req)
@@ -26,7 +30,7 @@ export async function POST(req: NextRequest) {
 
   const svc = createAdminSupabaseClient()
 
-  // Fetch parent phone (from DB — never trust JWT for phone used in payment)
+  // Fetch parent phone from DB — never trust JWT for payment phone
   const { data: session } = await svc
     .from('parent_sessions')
     .select('parent_phone')
@@ -38,70 +42,67 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Session not found' }, { status: 404 })
   }
 
-  // Create pending transaction record
-  const { data: txn, error: txnErr } = await svc
-    .from('wallet_transactions')
-    .insert({
-      school_id:   parent.schoolId,
-      student_id:  student_id,
-      amount:      amount,
-      type:        'topup_pending',
-      description: 'M-Pesa wallet topup',
-      reference:   `WTP-${Date.now()}`,
-    })
-    .select('id, reference')
-    .single()
+  const ref = `WTP-${Date.now()}`
 
-  if (txnErr || !txn) {
+  // Store pending context in mpesa_callbacks (callback handler resolves student/school from here)
+  const { error: pendingErr } = await svc.from('mpesa_callbacks').insert({
+    school_id:  parent.schoolId,
+    student_id: student_id,
+    reference:  ref,
+    purpose:    'wallet_topup',
+    amount:     amount,
+    phone:      session.parent_phone as string,
+    status:     'pending',
+  })
+
+  if (pendingErr) {
+    console.error('[wallet/topup] pending insert failed:', pendingErr)
     return NextResponse.json({ error: 'Failed to create transaction' }, { status: 500 })
   }
 
-  // Initiate STK Push via Daraja (implementation in /api/parent/mpesa/callback)
   const stkResult = await initiateStkPush({
     phone:     session.parent_phone as string,
     amount,
-    reference: txn.reference as string,
+    reference: ref,
     purpose:   'wallet_topup',
-    studentId: student_id,
-    schoolId:  parent.schoolId,
   })
 
   if (!stkResult.success) {
-    await svc.from('wallet_transactions').update({ type: 'topup_failed' }).eq('id', txn.id)
+    await svc.from('mpesa_callbacks').update({ status: 'failed', result_desc: stkResult.error })
+      .eq('reference', ref)
     return NextResponse.json({ error: 'Failed to initiate M-Pesa payment' }, { status: 502 })
   }
 
+  // Store CheckoutRequestID so callback can match by it too
+  await svc.from('mpesa_callbacks')
+    .update({ checkout_request_id: stkResult.checkoutRequestId })
+    .eq('reference', ref)
+
   return NextResponse.json({
     checkout_request_id: stkResult.checkoutRequestId,
+    reference:           ref,
     message:             'STK push sent. Enter your M-Pesa PIN to complete.',
   })
 }
 
 // ── STK Push helper ───────────────────────────────────────────────────────────
 
-interface StkPushOptions {
-  phone:     string
-  amount:    number
-  reference: string
-  purpose:   string
-  studentId: string
-  schoolId:  string
-}
+interface StkPushOptions { phone: string; amount: number; reference: string; purpose: string }
+interface StkResult { success: boolean; checkoutRequestId?: string; error?: string }
 
-async function initiateStkPush(opts: StkPushOptions) {
+async function initiateStkPush(opts: StkPushOptions): Promise<StkResult> {
   const consumerKey    = process.env.MPESA_CONSUMER_KEY    ?? ''
   const consumerSecret = process.env.MPESA_CONSUMER_SECRET ?? ''
-  const shortcode      = process.env.MPESA_SHORTCODE        ?? ''
-  const passkey        = process.env.MPESA_PASSKEY          ?? ''
-  const callbackUrl    = process.env.MPESA_CALLBACK_URL     ?? ''
+  const shortcode      = process.env.MPESA_SHORTCODE       ?? ''
+  const passkey        = process.env.MPESA_PASSKEY         ?? ''
+  const callbackUrl    = process.env.MPESA_CALLBACK_URL    ?? ''
 
   if (!consumerKey || !shortcode || !passkey || !callbackUrl) {
     return { success: false, error: 'M-Pesa not configured' }
   }
 
   try {
-    // Get OAuth token
-    const creds = Buffer.from(`${consumerKey}:${consumerSecret}`).toString('base64')
+    const creds    = Buffer.from(`${consumerKey}:${consumerSecret}`).toString('base64')
     const tokenRes = await fetch(
       'https://api.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials',
       { headers: { Authorization: `Basic ${creds}` } },
@@ -110,8 +111,7 @@ async function initiateStkPush(opts: StkPushOptions) {
 
     const timestamp = new Date().toISOString().replace(/[-:T.Z]/g, '').slice(0, 14)
     const password  = Buffer.from(`${shortcode}${passkey}${timestamp}`).toString('base64')
-
-    const phone12 = opts.phone.replace(/^\+/, '').replace(/^0/, '254')
+    const phone12   = opts.phone.replace(/^\+/, '').replace(/^0/, '254')
 
     const stkRes = await fetch(
       'https://api.safaricom.co.ke/mpesa/stkpush/v1/processrequest',
@@ -138,7 +138,7 @@ async function initiateStkPush(opts: StkPushOptions) {
     if (result.ResponseCode === '0') {
       return { success: true, checkoutRequestId: result.CheckoutRequestID }
     }
-    return { success: false, error: 'STK push rejected' }
+    return { success: false, error: 'STK push rejected by Safaricom' }
   } catch (e) {
     return { success: false, error: String(e) }
   }

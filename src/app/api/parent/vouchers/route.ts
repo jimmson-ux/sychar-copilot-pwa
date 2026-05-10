@@ -6,7 +6,9 @@ export const dynamic = 'force-dynamic'
 
 /**
  * GET /api/parent/vouchers?student_id=xxx
- * Returns active voucher packages and the student's voucher balance/history.
+ * Returns:
+ *   - active vouchers for the student (from student_vouchers)
+ *   - purchasable products for this school (from voucher_products)
  */
 export async function GET(req: NextRequest) {
   const parent = await requireParentAuth(req)
@@ -19,21 +21,24 @@ export async function GET(req: NextRequest) {
 
   const svc = createAdminSupabaseClient()
 
-  const [{ data: packages }, { data: vouchers }] = await Promise.all([
+  const [{ data: vouchers }, { data: products }] = await Promise.all([
     svc
-      .from('voucher_packages')
-      .select('id, name, description, price, meals_count, valid_days, is_active')
-      .eq('school_id', parent.schoolId)
-      .eq('is_active', true)
-      .order('price'),
-    svc
-      .from('bread_vouchers')
-      .select('id, package_id, meals_remaining, expires_at, activated_at, status')
+      .from('student_vouchers')
+      .select(
+        'id, item_type, item_label, unit_label, qty_remaining, qty_issued, qty_used, valid_from, valid_until, is_active, updated_at',
+      )
       .eq('student_id', studentId)
       .eq('school_id', parent.schoolId)
-      .order('activated_at', { ascending: false })
-      .limit(10),
+      .eq('is_active', true)
+      .gte('valid_until', new Date().toISOString().slice(0, 10))
+      .order('valid_until', { ascending: true }),
+    svc
+      .from('voucher_products')
+      .select('id, item_type, item_label, unit_label, qty, price_kes, valid_days')
+      .eq('school_id', parent.schoolId)
+      .eq('is_active', true)
+      .order('price_kes'),
   ])
 
-  return NextResponse.json({ packages: packages ?? [], vouchers: vouchers ?? [] })
+  return NextResponse.json({ vouchers: vouchers ?? [], products: products ?? [] })
 }

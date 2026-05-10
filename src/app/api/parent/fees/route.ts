@@ -6,7 +6,9 @@ export const dynamic = 'force-dynamic'
 
 /**
  * GET /api/parent/fees?student_id=xxx
- * Returns fee balance, payment history, and next due date for one child.
+ * Returns fee balance summary and recent transactions for one child.
+ *
+ * Tables: fee_balances (one row per student), fee_transactions (ledger)
  */
 export async function GET(req: NextRequest) {
   const parent = await requireParentAuth(req)
@@ -19,22 +21,21 @@ export async function GET(req: NextRequest) {
 
   const svc = createAdminSupabaseClient()
 
-  const [{ data: ledger }, { data: payments }] = await Promise.all([
+  const [{ data: balance }, { data: transactions }] = await Promise.all([
     svc
-      .from('student_fee_ledger')
-      .select('balance_due, total_charged, total_paid, term, academic_year')
+      .from('fee_balances')
+      .select('*')
       .eq('student_id', studentId)
       .eq('school_id', parent.schoolId)
-      .order('academic_year', { ascending: false })
-      .limit(6),
+      .single(),
     svc
-      .from('fee_payments')
-      .select('amount, payment_date, method, reference, description')
+      .from('fee_transactions')
+      .select('id, amount, type, reference, term, year, created_at')
       .eq('student_id', studentId)
       .eq('school_id', parent.schoolId)
-      .order('payment_date', { ascending: false })
+      .order('created_at', { ascending: false })
       .limit(20),
   ])
 
-  return NextResponse.json({ ledger: ledger ?? [], payments: payments ?? [] })
+  return NextResponse.json({ balance: balance ?? null, transactions: transactions ?? [] })
 }

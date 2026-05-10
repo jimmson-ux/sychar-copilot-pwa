@@ -7,18 +7,16 @@ export const dynamic = 'force-dynamic'
  * POST /api/parent/mpesa/callback
  *
  * Receives Safaricom Daraja STK Push callback.
- * Handles three transaction purposes determined by AccountReference prefix:
- *   WTP-{ts}   → wallet topup
- *   VCH-{ts}   → voucher purchase
- *   FEE-{ts}   → school fees payment
+ * Routes by AccountReference prefix:
+ *   WTP-{ts}                      → wallet topup
+ *   VCH-{ts}                      → voucher purchase
+ *   FEE-{studentId}-{term}-{year} → school fees payment
  *
- * Security:
- *   - Safaricom IP allowlist (CIDR ranges published in Daraja docs)
- *   - No auth token required (Safaricom pushes to us)
- *   - Idempotency: duplicate MpesaReceiptNumber is silently ignored
+ * Pending context (student_id, school_id, purpose) is stored in
+ * mpesa_callbacks by the initiating route (topup / voucher purchase).
+ * This handler updates the same record and processes the payment.
  */
 
-// Safaricom production IP ranges (from Daraja documentation)
 const SAFARICOM_CIDRS = [
   '196.201.214.0/24',
   '196.201.214.200/24',
@@ -30,16 +28,15 @@ const SAFARICOM_CIDRS = [
 
 function ipInCidr(ip: string, cidr: string): boolean {
   const [range, bits] = cidr.split('/')
-  const mask    = ~((1 << (32 - Number(bits))) - 1)
-  const ipNum   = ip.split('.').reduce((acc, oct) => (acc << 8) + Number(oct), 0)
-  const rangeNum = range.split('.').reduce((acc, oct) => (acc << 8) + Number(oct), 0)
+  const mask     = ~((1 << (32 - Number(bits))) - 1)
+  const ipNum    = ip.split('.').reduce((a, o) => (a << 8) + Number(o), 0)
+  const rangeNum = range.split('.').reduce((a, o) => (a << 8) + Number(o), 0)
   return (ipNum & mask) === (rangeNum & mask)
 }
 
 function isSafaricomIp(ip: string): boolean {
-  // Allow bypass in development
   if (process.env.NODE_ENV !== 'production') return true
-  return SAFARICOM_CIDRS.some(cidr => ipInCidr(ip, cidr))
+  return SAFARICOM_CIDRS.some((cidr) => ipInCidr(ip, cidr))
 }
 
 function getClientIp(req: NextRequest): string {
@@ -50,22 +47,22 @@ function getClientIp(req: NextRequest): string {
   )
 }
 
-// ── Daraja callback shape ─────────────────────────────────────────────────────
-
-interface DarajaItem  { Name: string; Value?: string | number }
-interface DarajaBody  {
+interface DarajaItem { Name: string; Value?: string | number }
+interface DarajaBody {
   stkCallback: {
-    MerchantRequestID:  string
-    CheckoutRequestID:  string
-    ResultCode:         number
-    ResultDesc:         string
+    MerchantRequestID: string
+    CheckoutRequestID: string
+    ResultCode:        number
+    ResultDesc:        string
     CallbackMetadata?: { Item: DarajaItem[] }
   }
 }
 
 function extractMeta(items: DarajaItem[], key: string): string | number | undefined {
-  return items.find(i => i.Name === key)?.Value
+  return items.find((i) => i.Name === key)?.Value
 }
+
+type Svc = ReturnType<typeof createAdminSupabaseClient>
 
 export async function POST(req: NextRequest) {
   const ip = getClientIp(req)
@@ -85,9 +82,8 @@ export async function POST(req: NextRequest) {
 
   const svc = createAdminSupabaseClient()
 
-  // Failed payment (ResultCode !== 0)
   if (cb.ResultCode !== 0) {
-    await handleFailedPayment(svc, cb.CheckoutRequestID, cb.ResultDesc)
+    await handleFailed(svc, cb.CheckoutRequestID, cb.ResultDesc)
     return NextResponse.json({ ResultCode: 0, ResultDesc: 'Accepted' })
   }
 
@@ -101,116 +97,232 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ResultCode: 1, ResultDesc: 'Missing metadata' })
   }
 
-  // Idempotency: skip if receipt already processed
+  // Idempotency — skip if receipt already processed
   const { data: existing } = await svc
     .from('mpesa_callbacks')
     .select('id')
     .eq('receipt', receipt)
-    .single()
+    .maybeSingle()
 
   if (existing) return NextResponse.json({ ResultCode: 0, ResultDesc: 'Already processed' })
 
-  // Log the callback
-  await svc.from('mpesa_callbacks').insert({
-    checkout_request_id: cb.CheckoutRequestID,
-    receipt,
-    amount,
-    phone,
-    reference:  ref,
-    result_code: cb.ResultCode,
-    result_desc: cb.ResultDesc,
-    raw:         body,
-  })
-
   // Route by reference prefix
   if (ref.startsWith('WTP-')) {
-    await handleWalletTopup(svc, ref, amount, receipt)
+    await handleWalletTopup(svc, ref, amount, receipt, cb.CheckoutRequestID, body)
   } else if (ref.startsWith('VCH-')) {
-    await handleVoucherPurchase(svc, ref, amount, receipt)
+    await handleVoucherPurchase(svc, ref, amount, receipt, body)
   } else if (ref.startsWith('FEE-')) {
-    await handleSchoolFees(svc, ref, amount, receipt, phone)
+    await handleSchoolFees(svc, ref, amount, receipt, phone, body)
   }
 
   return NextResponse.json({ ResultCode: 0, ResultDesc: 'Accepted' })
 }
 
-// ── Handlers ──────────────────────────────────────────────────────────────────
-
-type Svc = ReturnType<typeof createAdminSupabaseClient>
-
-async function handleFailedPayment(svc: Svc, checkoutRequestId: string, reason: string) {
-  // Mark any pending wallet transaction as failed
+async function handleFailed(svc: Svc, checkoutRequestId: string, reason: string) {
   await svc
-    .from('wallet_transactions')
-    .update({ type: 'topup_failed', description: reason })
-    .eq('reference', checkoutRequestId)
-    .eq('type', 'topup_pending')
-
-  // Mark any pending voucher as cancelled
-  await svc
-    .from('bread_vouchers')
-    .update({ status: 'cancelled' })
-    .eq('mpesa_reference', checkoutRequestId)
-    .eq('status', 'pending_payment')
+    .from('mpesa_callbacks')
+    .update({ status: 'failed', result_desc: reason, updated_at: new Date().toISOString() })
+    .eq('checkout_request_id', checkoutRequestId)
+    .eq('status', 'pending')
 }
 
-async function handleWalletTopup(svc: Svc, ref: string, amount: number, receipt: string) {
-  const { data: txn } = await svc
-    .from('wallet_transactions')
+async function handleWalletTopup(
+  svc:               Svc,
+  ref:               string,
+  amount:            number,
+  receipt:           string,
+  checkoutRequestId: string,
+  raw:               unknown,
+) {
+  // Resolve pending context from mpesa_callbacks
+  const { data: pending } = await svc
+    .from('mpesa_callbacks')
     .select('id, student_id, school_id')
     .eq('reference', ref)
-    .eq('type', 'topup_pending')
+    .eq('purpose', 'wallet_topup')
+    .eq('status', 'pending')
     .single()
 
-  if (!txn) return
+  if (!pending) {
+    // Fallback: try by checkout_request_id
+    const { data: byCheckout } = await svc
+      .from('mpesa_callbacks')
+      .select('id, student_id, school_id')
+      .eq('checkout_request_id', checkoutRequestId)
+      .eq('status', 'pending')
+      .single()
 
-  await Promise.all([
-    // Update transaction status
-    svc.from('wallet_transactions')
-      .update({ type: 'topup', description: `M-Pesa topup — ${receipt}` })
-      .eq('id', txn.id),
-    // Credit wallet
-    svc.rpc('increment_wallet_balance', {
-      p_student_id: txn.student_id,
-      p_school_id:  txn.school_id,
-      p_amount:     amount,
-    }),
-  ])
+    if (!byCheckout) return
+    Object.assign(pending ?? {}, byCheckout)
+  }
+
+  if (!pending?.student_id || !pending?.school_id) return
+
+  // Credit wallet — triggers apply_wallet_transaction() which updates balance
+  await svc.rpc('increment_wallet_balance', {
+    p_student_id:  pending.student_id,
+    p_school_id:   pending.school_id,
+    p_amount:      amount,
+    p_mpesa_ref:   receipt,
+    p_description: `M-Pesa wallet topup — ${receipt}`,
+  })
+
+  // Update pending record with final status
+  await svc
+    .from('mpesa_callbacks')
+    .update({
+      receipt,
+      result_code: 0,
+      result_desc: 'Success',
+      status:      'success',
+      raw:         raw as never,
+      updated_at:  new Date().toISOString(),
+    })
+    .eq('id', pending.id)
 }
 
-async function handleVoucherPurchase(svc: Svc, ref: string, amount: number, receipt: string) {
-  await svc
-    .from('bread_vouchers')
-    .update({
-      status:       'active',
-      activated_at: new Date().toISOString(),
-      mpesa_reference: receipt,
+async function handleVoucherPurchase(
+  svc:     Svc,
+  ref:     string,
+  amount:  number,
+  receipt: string,
+  raw:     unknown,
+) {
+  const { data: pending } = await svc
+    .from('mpesa_callbacks')
+    .select('id, student_id, school_id')
+    .eq('reference', ref)
+    .eq('purpose', 'voucher_purchase')
+    .eq('status', 'pending')
+    .single()
+
+  if (!pending?.student_id || !pending?.school_id) return
+
+  // Find the voucher_products entry that matches the pending amount for this school
+  const { data: product } = await svc
+    .from('voucher_products')
+    .select('id, item_type, item_label, unit_label, qty, valid_days')
+    .eq('school_id', pending.school_id)
+    .eq('price_kes', amount)
+    .eq('is_active', true)
+    .limit(1)
+    .single()
+
+  if (!product) {
+    await svc.from('mpesa_callbacks').update({ status: 'failed', result_desc: 'No matching product', updated_at: new Date().toISOString() }).eq('id', pending.id)
+    return
+  }
+
+  const p = product as { id: string; item_type: string; item_label: string; unit_label: string; qty: number; valid_days: number }
+  const validUntil = new Date(Date.now() + p.valid_days * 86_400_000).toISOString().slice(0, 10)
+
+  const { data: studentData } = await svc
+    .from('students')
+    .select('full_name, admission_no')
+    .eq('id', pending.student_id)
+    .single()
+
+  const { data: voucher } = await svc
+    .from('student_vouchers')
+    .upsert(
+      {
+        school_id:    pending.school_id,
+        student_id:   pending.student_id,
+        student_name: (studentData as { full_name: string } | null)?.full_name ?? '',
+        admission_no: (studentData as { admission_no: string } | null)?.admission_no ?? null,
+        item_type:    p.item_type,
+        item_label:   p.item_label,
+        unit_label:   p.unit_label,
+        valid_from:   new Date().toISOString().slice(0, 10),
+        valid_until:  validUntil,
+        is_active:    true,
+      },
+      { onConflict: 'school_id,student_id,item_type,valid_from', ignoreDuplicates: false },
+    )
+    .select('id')
+    .single()
+
+  if (voucher) {
+    await svc.rpc('issue_vouchers', {
+      p_voucher_id:  voucher.id,
+      p_qty:         p.qty,
+      p_description: `M-Pesa purchase — ${receipt}`,
     })
-    .eq('mpesa_reference', ref)
-    .eq('status', 'pending_payment')
+  }
+
+  await svc
+    .from('mpesa_callbacks')
+    .update({
+      receipt,
+      result_code: 0,
+      result_desc: 'Success',
+      status:      'success',
+      raw:         raw as never,
+      updated_at:  new Date().toISOString(),
+    })
+    .eq('id', pending.id)
 }
 
 async function handleSchoolFees(
-  svc: Svc,
-  ref: string,
-  amount: number,
+  svc:     Svc,
+  ref:     string,
+  amount:  number,
   receipt: string,
-  phone: string,
+  _phone:  string,
+  raw:     unknown,
 ) {
   // ref format: FEE-{studentId}-{term}-{year}
   const parts = ref.split('-')
   if (parts.length < 4) return
-
   const [, studentId, term, year] = parts
 
-  await svc.from('fee_payments').insert({
-    reference:    receipt,
-    student_id:   studentId,
+  // Resolve school_id from student
+  const { data: student } = await svc
+    .from('students')
+    .select('school_id')
+    .eq('id', studentId)
+    .single()
+
+  if (!student?.school_id) return
+
+  const schoolId = student.school_id as string
+
+  // Insert fee transaction
+  await svc.from('fee_transactions').insert({
+    school_id:  schoolId,
+    student_id: studentId,
+    amount:     amount,
+    type:       'Payment',
+    reference:  receipt,
+    term:       Number(term),
+    year:       Number(year),
+  })
+
+  // Update fee_balances paid amount — handles both column naming conventions
+  await svc.rpc('update_fee_balance_on_payment', {
+    p_student_id: studentId,
+    p_amount:     amount,
+  }).then(() => {}).catch(async () => {
+    // Fallback: direct update for either column name
+    await svc
+      .from('fee_balances')
+      .update({ paid_amount: amount, last_payment_at: new Date().toISOString() })
+      .eq('student_id', studentId)
+      .eq('school_id', schoolId)
+      .then(() => {})
+  })
+
+  // Log to mpesa_callbacks for audit
+  await svc.from('mpesa_callbacks').insert({
+    school_id:   schoolId,
+    student_id:  studentId,
+    reference:   ref,
+    receipt,
     amount,
-    payment_date: new Date().toISOString().slice(0, 10),
-    method:       'mpesa',
-    description:  `M-Pesa school fees — ${receipt}`,
-    term:         Number(term),
-    academic_year: year,
+    purpose:     'school_fees',
+    result_code: 0,
+    result_desc: 'Success',
+    status:      'success',
+    raw:         raw as never,
   })
 }

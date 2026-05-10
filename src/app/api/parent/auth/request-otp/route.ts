@@ -117,5 +117,5 @@ export async function POST(req: NextRequest) {
     is_active:     true,
   })
 
-  return NextResponse.json({ sent: true, otp })
+  return NextResponse.json({ sent: true })
 }

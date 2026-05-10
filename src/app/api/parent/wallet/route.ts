@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic'
 
 /**
  * GET /api/parent/wallet?student_id=xxx
- * Returns wallet balance and last 30 transactions.
+ * Returns wallet balance and last 30 transactions for one child.
  */
 export async function GET(req: NextRequest) {
   const parent = await requireParentAuth(req)
@@ -22,13 +22,13 @@ export async function GET(req: NextRequest) {
   const [{ data: wallet }, { data: txns }] = await Promise.all([
     svc
       .from('student_wallets')
-      .select('balance, currency, low_balance_alert, auto_topup_enabled, auto_topup_threshold, auto_topup_amount')
+      .select('balance_kes, daily_limit_kes, today_spent_kes, is_frozen, frozen_by, freeze_reason, updated_at')
       .eq('student_id', studentId)
       .eq('school_id', parent.schoolId)
       .single(),
     svc
       .from('wallet_transactions')
-      .select('amount, type, description, created_at, reference')
+      .select('id, ledger, direction, amount_kes, qty, item_type, tx_type, description, mpesa_ref, balance_after_kes, created_at')
       .eq('student_id', studentId)
       .eq('school_id', parent.schoolId)
       .order('created_at', { ascending: false })
