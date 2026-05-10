@@ -12,40 +12,36 @@ export const dynamic = 'force-dynamic'
  * POST /api/ai/timetable/generate
  *
  * AI-assisted timetable generation for Deputy Principal / Dean.
- * Reads existing teacher workload from DB, then asks Claude (→ Gemini fallback)
- * to produce a balanced weekly schedule respecting:
- *   - Each class gets all required subjects
- *   - No teacher teaches two classes in the same period
- *   - Balanced workload: ≤ MAX_PERIODS_PER_DAY lessons per teacher per day
- *   - Duty roster slots inserted as period_type = 'duty'
- *   - Double periods flagged where allowed (is_double = true)
  *
- * Body:
- *   {
- *     class_ids:         string[]          — classes to schedule
- *     subject_teachers:  { subject: string; teacher_id: string; teacher_name: string; classes: string[] }[]
- *     breaks:            { name: string; start_time: string; end_time: string }[]
- *     school_day_start:  string            — "07:30"
- *     school_day_end:    string            — "17:00"
- *     lesson_duration:   number            — minutes, default 40
- *     days_per_week:     number            — 5
- *   }
+ * Intelligence sources fed to the AI:
+ *   1. Teacher attendance stats — punctuality %, avg late minutes, absent rate
+ *   2. Subject performance — student scores per teacher×subject×class
+ *   3. Appraisal scores — punctuality, incident handling, student welfare ratings
+ *   4. Existing workload — lesson counts to balance the schedule
  *
- * Returns: { periods: TimetablePeriod[], warnings: string[] }
+ * Rules enforced by AI:
+ *   - Reliable teachers (high punctuality %) placed in critical early-morning slots
+ *   - Best-performing teachers matched to their strongest subject-class combos
+ *   - No teacher teaches two classes simultaneously
+ *   - Duty periods use high incident_handling + student_welfare appraisal scorers
+ *   - Balanced load: ≤ 4 lessons per teacher per day
+ *
+ * Body: { class_ids, subject_teachers, breaks, school_day_start, school_day_end,
+ *         lesson_duration, days_per_week, term?, academic_year? }
  */
 
 const DEPUTY_ROLES = new Set([
   'deputy_principal', 'deputy_principal_academic', 'dean_of_studies',
 ])
 
-// ── Zod schema for structured AI output ────────────────────────────────────
+// ── Zod schema ──────────────────────────────────────────────────────────────
 const PeriodSchema = z.object({
   class_id:      z.string(),
   class_name:    z.string(),
   subject:       z.string(),
   teacher_id:    z.string(),
   teacher_name:  z.string(),
-  day_of_week:   z.number().int().min(1).max(5),  // 1=Mon … 5=Fri
+  day_of_week:   z.number().int().min(1).max(5),
   period_number: z.number().int().min(1),
   start_time:    z.string().regex(/^\d{2}:\d{2}$/),
   end_time:      z.string().regex(/^\d{2}:\d{2}$/),
@@ -59,58 +55,138 @@ const TimetableSchema = z.object({
   warnings: z.array(z.string()),
 })
 
-type TimetableOutput = z.infer<typeof TimetableSchema>
+type AttendanceStat = {
+  teacher_id: string; teacher_name: string
+  total_lessons: number; on_time: number
+  late_count: number; absent_count: number; left_early_count: number
+  avg_late_minutes: number | null; punctuality_pct: number | null
+}
 
-// ── Helpers ─────────────────────────────────────────────────────────────────
-function buildTimetablePrompt(body: {
-  class_ids:        string[]
-  subject_teachers: { subject: string; teacher_id: string; teacher_name: string; classes: string[] }[]
-  breaks:           { name: string; start_time: string; end_time: string }[]
-  school_day_start: string
-  school_day_end:   string
-  lesson_duration:  number
-  days_per_week:    number
-}, workload: { teacher_id: string; teacher_name: string; lesson_count: number }[]): string {
-  const subjectLines = body.subject_teachers
-    .map(st => `• ${st.teacher_name} (${st.teacher_id}): teaches ${st.subject} to classes [${st.classes.join(', ')}]`)
+type SubjectPerf = {
+  teacher_id: string; teacher_name: string
+  subject_name: string; class_name: string
+  avg_score: number | null; avg_pct: number | null; record_count: number
+}
+
+type AppraisalScore = {
+  teacher_id: string; teacher_name: string
+  avg_punctuality: number | null; avg_incident_handling: number | null
+  avg_report_quality: number | null; avg_student_welfare: number | null
+  appraisal_count: number
+}
+
+type WorkloadRow = { teacher_id: string; teacher_name: string; lesson_count: number }
+
+// ── Prompt builder ───────────────────────────────────────────────────────────
+function buildPrompt(
+  body: {
+    class_ids: string[]
+    subject_teachers: { subject: string; teacher_id: string; teacher_name: string; classes: string[] }[]
+    breaks: { name: string; start_time: string; end_time: string }[]
+    school_day_start: string
+    school_day_end: string
+    lesson_duration: number
+    days_per_week: number
+  },
+  workload:     WorkloadRow[],
+  attendance:   AttendanceStat[],
+  performance:  SubjectPerf[],
+  appraisals:   AppraisalScore[],
+): string {
+  // ─── Attendance reliability block ───
+  const attendanceBlock = attendance.length > 0
+    ? attendance.map(a => {
+        const pct = a.punctuality_pct != null ? `${a.punctuality_pct}%` : 'no data'
+        const late = a.late_count > 0 ? `, avg ${a.avg_late_minutes ?? '?'} min late` : ''
+        const absent = a.absent_count > 0 ? `, absent ${a.absent_count}×` : ''
+        const early = a.left_early_count > 0 ? `, left early ${a.left_early_count}×` : ''
+        return `  • ${a.teacher_name}: on-time ${pct} (${a.total_lessons} lessons${late}${absent}${early})`
+      }).join('\n')
+    : '  • No attendance history yet — treat all teachers as equally reliable'
+
+  // ─── Subject performance block ───
+  const perfByTeacher = new Map<string, SubjectPerf[]>()
+  performance.forEach(p => {
+    const key = `${p.teacher_id}|${p.teacher_name}`
+    if (!perfByTeacher.has(key)) perfByTeacher.set(key, [])
+    perfByTeacher.get(key)!.push(p)
+  })
+  const performanceBlock = perfByTeacher.size > 0
+    ? Array.from(perfByTeacher.entries()).map(([key, rows]) => {
+        const name = key.split('|')[1]
+        const subjects = rows.map(r => {
+          const pct = r.avg_pct != null ? `${r.avg_pct}%` : 'N/A'
+          return `${r.subject_name}/${r.class_name}: ${pct} avg (n=${r.record_count})`
+        }).join(', ')
+        return `  • ${name}: ${subjects}`
+      }).join('\n')
+    : '  • No exam data yet — use subject assignments as given'
+
+  // ─── Appraisal block ───
+  const appraisalBlock = appraisals.length > 0
+    ? appraisals.map(a => {
+        const punct = a.avg_punctuality != null ? `punct=${a.avg_punctuality}` : ''
+        const incident = a.avg_incident_handling != null ? `incident=${a.avg_incident_handling}` : ''
+        const welfare = a.avg_student_welfare != null ? `welfare=${a.avg_student_welfare}` : ''
+        return `  • ${a.teacher_name}: ${[punct, incident, welfare].filter(Boolean).join(', ')} (${a.appraisal_count} appraisals)`
+      }).join('\n')
+    : '  • No appraisal data yet'
+
+  // ─── Workload block ───
+  const workloadBlock = workload.length > 0
+    ? workload.map(w => `  • ${w.teacher_name}: ${w.lesson_count} periods already scheduled`).join('\n')
+    : '  • No existing periods — scheduling from scratch'
+
+  // ─── Subject-teacher assignments ───
+  const assignmentsBlock = body.subject_teachers
+    .map(st => `  • ${st.teacher_name} (id:${st.teacher_id}): ${st.subject} → [${st.classes.join(', ')}]`)
     .join('\n')
 
-  const breakLines = body.breaks
-    .map(b => `• ${b.name}: ${b.start_time}–${b.end_time}`)
-    .join('\n')
+  // ─── Break slots ───
+  const breaksBlock = body.breaks.length > 0
+    ? body.breaks.map(b => `  • ${b.name}: ${b.start_time}–${b.end_time}`).join('\n')
+    : '  • No fixed breaks specified'
 
-  const workloadLines = workload
-    .map(w => `• ${w.teacher_name}: ${w.lesson_count} periods already this week`)
-    .join('\n')
+  return `You are an expert school timetabling AI for Nkoroi Senior School (Kenya CBC/KCSE curriculum).
+Generate a complete, intelligent weekly timetable for ${body.days_per_week} school days.
 
-  return `You are a school timetable scheduling expert. Generate a complete weekly timetable for a Kenyan secondary school.
-
-School day: ${body.school_day_start} to ${body.school_day_end}
+SCHOOL PARAMETERS
+School day: ${body.school_day_start}–${body.school_day_end}
 Lesson duration: ${body.lesson_duration} minutes
-Days per week: ${body.days_per_week} (Monday=1 to Friday=5)
 Classes to schedule: ${body.class_ids.join(', ')}
 
-Fixed breaks (skip these slots):
-${breakLines}
+FIXED BREAKS (do not schedule lessons here):
+${breaksBlock}
 
-Subject-teacher assignments:
-${subjectLines}
+SUBJECT–TEACHER ASSIGNMENTS:
+${assignmentsBlock}
 
-Current teacher workload (to balance):
-${workloadLines || '• No existing periods yet'}
+TEACHER ATTENDANCE RELIABILITY (last 90 days):
+${attendanceBlock}
 
-Rules:
-1. No teacher teaches two different classes in the same period on the same day
-2. Spread a teacher's lessons across the week (avoid > 4 lessons per day per teacher)
-3. Each class must have every assigned subject at least once per week
-4. Insert a 'duty' period_type for one teacher per day at break time for playground supervision
-5. Mark consecutive same-subject periods for the same class as is_double=true
-6. Use realistic Kenyan school subjects: Maths, English, Kiswahili, Physics, Chemistry, Biology, History, Geography, CRE, Business, Agriculture, Computer Studies, Art, Music, PE
-7. start_time and end_time must be HH:MM format (24-hour)
-8. period_number is sequential per class per day starting from 1
-9. Add warnings for any scheduling conflicts you cannot resolve
+STUDENT PERFORMANCE BY TEACHER×SUBJECT (higher % = teacher gets better results):
+${performanceBlock}
 
-Generate the full timetable covering all classes for all 5 days.`
+TEACHER APPRAISAL SCORES (scale 1–5):
+${appraisalBlock}
+
+CURRENT WORKLOAD:
+${workloadBlock}
+
+TIMETABLING RULES — follow strictly:
+1. No teacher teaches two classes in the same period on the same day.
+2. Limit to 4 lessons per teacher per day for work–life balance.
+3. Place HIGHEST punctuality teachers (>= 90% on-time) in Period 1 (first lesson of the day) — students need reliable teachers for morning lessons.
+4. Where a teacher has proven results in a specific subject-class combination (high avg_pct), prioritise that assignment over a weaker performer for that class.
+5. Insert ONE 'duty' period per school day (period_type = 'duty') for the teacher with the highest COMBINED (incident_handling + student_welfare) appraisal score — this is playground/gate supervision. Duty time coincides with the main break.
+6. If two teachers have identical appraisal scores, give duty to the one with FEWER lessons that day.
+7. Mark back-to-back same-subject periods for the same class as is_double = true.
+8. Teachers with frequent absences (absent_count >= 3) should NOT be given Period 1 on Monday.
+9. start_time and end_time must be HH:MM 24-hour format.
+10. period_number is sequential per class per day starting from 1.
+11. Add a 'warnings' array for any conflicts you cannot resolve.
+
+Generate the FULL timetable covering ALL classes for ALL ${body.days_per_week} days.`
 }
 
 // ── Route handler ────────────────────────────────────────────────────────────
@@ -119,7 +195,10 @@ export async function POST(req: NextRequest) {
   if (auth.unauthorized) return auth.unauthorized
 
   if (!DEPUTY_ROLES.has(auth.subRole)) {
-    return NextResponse.json({ error: 'Only Deputy Principal or Dean of Studies can generate timetables' }, { status: 403 })
+    return NextResponse.json(
+      { error: 'Only Deputy Principal or Dean of Studies can generate timetables' },
+      { status: 403 },
+    )
   }
 
   const body = await req.json().catch(() => null)
@@ -135,6 +214,8 @@ export async function POST(req: NextRequest) {
     school_day_end    = '17:00',
     lesson_duration   = 40,
     days_per_week     = 5,
+    term,
+    academic_year,
   } = body as {
     class_ids:        string[]
     subject_teachers: { subject: string; teacher_id: string; teacher_name: string; classes: string[] }[]
@@ -143,48 +224,64 @@ export async function POST(req: NextRequest) {
     school_day_end:   string
     lesson_duration:  number
     days_per_week:    number
+    term?:            string
+    academic_year?:   string
   }
 
   const svc = createAdminSupabaseClient()
 
-  // Fetch current teacher workload for balancing
-  const { data: workloadRows } = await svc.rpc('get_teacher_workload_summary', {
-    p_school_id: auth.schoolId,
-  })
-  const workload = (workloadRows ?? []) as { teacher_id: string; teacher_name: string; lesson_count: number }[]
+  // ── Fetch all intelligence sources in parallel ─────────────────
+  const [
+    { data: workloadRows },
+    { data: attendanceRows },
+    { data: performanceRows },
+    { data: appraisalRows },
+  ] = await Promise.all([
+    svc.rpc('get_teacher_workload_summary',     { p_school_id: auth.schoolId }),
+    svc.rpc('get_teacher_attendance_stats',     { p_school_id: auth.schoolId, p_days_back: 90 }),
+    svc.rpc('get_teacher_subject_performance',  {
+      p_school_id:     auth.schoolId,
+      p_term:          term          ?? null,
+      p_academic_year: academic_year ?? null,
+    }),
+    svc.rpc('get_teacher_appraisal_scores',    { p_school_id: auth.schoolId }),
+  ])
 
-  const prompt = buildTimetablePrompt(
+  const prompt = buildPrompt(
     { class_ids, subject_teachers, breaks, school_day_start, school_day_end, lesson_duration, days_per_week },
-    workload,
+    (workloadRows  ?? []) as WorkloadRow[],
+    (attendanceRows ?? []) as AttendanceStat[],
+    (performanceRows ?? []) as SubjectPerf[],
+    (appraisalRows ?? []) as AppraisalScore[],
   )
 
-  // ── AI generation: Claude → Gemini fallback ────────────────────────────
-  let result: TimetableOutput
+  // ── AI generation: Claude Opus → Gemini fallback ───────────────
+  let result: z.infer<typeof TimetableSchema>
 
   try {
     const { object } = await generateText({
-      model:       anthropic('claude-opus-4.7'),
+      model:     anthropic('claude-opus-4.7'),
       prompt,
-      maxTokens:   4000,
-      output:      { type: 'object', schema: TimetableSchema },
+      maxTokens: 8000,
+      output:    { type: 'object', schema: TimetableSchema },
     })
-    result = object as TimetableOutput
+    result = object as z.infer<typeof TimetableSchema>
   } catch {
     try {
       const { object } = await generateText({
-        model:       google('gemini-2.0-flash'),
+        model:     google('gemini-2.0-flash'),
         prompt,
-        maxTokens:   4000,
-        output:      { type: 'object', schema: TimetableSchema },
+        maxTokens: 8000,
+        output:    { type: 'object', schema: TimetableSchema },
       })
-      result = object as TimetableOutput
+      result = object as z.infer<typeof TimetableSchema>
     } catch (err) {
       console.error('[timetable/generate] AI failed', err)
       return NextResponse.json({ error: 'AI generation failed — please try again' }, { status: 502 })
     }
   }
 
-  // ── Persist generated periods to timetable_periods ─────────────────────
+  // ── Persist to timetable_periods ───────────────────────────────
   if (result.periods.length > 0) {
     const rows = result.periods.map(p => ({
       school_id:     auth.schoolId,
@@ -200,30 +297,34 @@ export async function POST(req: NextRequest) {
       period_type:   p.period_type,
       is_double:     p.is_double,
       room:          p.room ?? null,
+      ai_generated:  true,
       is_active:     true,
     }))
 
-    // Upsert on (school_id, class_id, day_of_week, period_number) — replaces draft
     const { error: upsertErr } = await svc
       .from('timetable_periods')
       .upsert(rows, { onConflict: 'school_id,class_id,day_of_week,period_number' })
 
     if (upsertErr) {
       console.error('[timetable/generate] persist error', upsertErr)
-      // Return result anyway — client can retry persist
       return NextResponse.json({ ...result, persist_error: upsertErr.message })
     }
   }
 
   return NextResponse.json({
-    periods:       result.periods,
-    warnings:      result.warnings,
-    period_count:  result.periods.length,
-    persisted:     true,
+    periods:      result.periods,
+    warnings:     result.warnings,
+    period_count: result.periods.length,
+    persisted:    true,
+    intelligence: {
+      attendance_records:   (attendanceRows ?? []).length,
+      performance_records:  (performanceRows ?? []).length,
+      appraisal_records:    (appraisalRows  ?? []).length,
+    },
   })
 }
 
-// GET — return the current timetable for the school
+// GET — current timetable for the school
 export async function GET(_req: NextRequest) {
   const auth = await requireAuth()
   if (auth.unauthorized) return auth.unauthorized
@@ -231,12 +332,9 @@ export async function GET(_req: NextRequest) {
   const canView = DEPUTY_ROLES.has(auth.subRole) ||
     ['principal', 'super_admin', 'teacher'].includes(auth.subRole)
 
-  if (!canView) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
+  if (!canView) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const svc = createAdminSupabaseClient()
-
   const { data, error } = await svc
     .from('timetable_periods')
     .select(
