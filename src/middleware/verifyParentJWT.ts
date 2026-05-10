@@ -16,7 +16,7 @@ export interface ParentAuthOk {
   phone:      string
   schoolId:   string
   studentIds: string[]
-  sessionId:  string
+  sessionId:  string | undefined
   unauthorized: null
 }
 

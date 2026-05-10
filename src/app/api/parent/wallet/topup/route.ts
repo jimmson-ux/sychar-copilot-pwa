@@ -19,7 +19,11 @@ export async function POST(req: NextRequest) {
   if (parent.unauthorized) return parent.unauthorized
 
   const body = await req.json().catch(() => ({}))
-  const { student_id, amount } = body as { student_id?: string; amount?: number }
+  const { student_id, amount, mpesa_phone } = body as {
+    student_id?:  string
+    amount?:      number
+    mpesa_phone?: string   // parent supplies their Safaricom number at pay-time
+  }
 
   if (!student_id || !parent.studentIds.includes(student_id)) {
     return NextResponse.json({ error: 'Invalid student_id' }, { status: 403 })
@@ -27,21 +31,15 @@ export async function POST(req: NextRequest) {
   if (!amount || amount < 50 || amount > 10000) {
     return NextResponse.json({ error: 'Amount must be between KES 50 and 10,000' }, { status: 400 })
   }
-
-  const svc = createAdminSupabaseClient()
-
-  // Fetch parent phone from DB — never trust JWT for payment phone
-  const { data: session } = await svc
-    .from('parent_sessions')
-    .select('parent_phone')
-    .eq('id', parent.sessionId)
-    .eq('school_id', parent.schoolId)
-    .single()
-
-  if (!session?.parent_phone) {
-    return NextResponse.json({ error: 'Session not found' }, { status: 404 })
+  if (!mpesa_phone?.trim()) {
+    return NextResponse.json({ error: 'mpesa_phone is required for payment' }, { status: 400 })
   }
 
+  // Normalise phone → 254XXXXXXXXX
+  const phone = mpesa_phone.trim().replace(/\D/g, '')
+    .replace(/^0/, '254').replace(/^(\d{9})$/, '254$1')
+
+  const svc = createAdminSupabaseClient()
   const ref = `WTP-${Date.now()}`
 
   // Store pending context in mpesa_callbacks (callback handler resolves student/school from here)
@@ -51,7 +49,7 @@ export async function POST(req: NextRequest) {
     reference:  ref,
     purpose:    'wallet_topup',
     amount:     amount,
-    phone:      session.parent_phone as string,
+    phone:      phone,
     status:     'pending',
   })
 
@@ -61,7 +59,7 @@ export async function POST(req: NextRequest) {
   }
 
   const stkResult = await initiateStkPush({
-    phone:     session.parent_phone as string,
+    phone:     phone,
     amount,
     reference: ref,
     purpose:   'wallet_topup',

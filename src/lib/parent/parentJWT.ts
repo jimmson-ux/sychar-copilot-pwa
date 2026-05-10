@@ -15,10 +15,10 @@ const ALG = 'HS256'
 const TTL = 60 * 60 * 24 * 30   // 30 days in seconds
 
 export interface ParentTokenPayload {
-  sub:         string      // parent_phone (E.164)
-  school_id:   string      // UUID
-  student_ids: string[]    // UUIDs
-  session_id:  string      // parent_sessions.id
+  sub:          string     // student UUID (primary verified student)
+  school_id:    string     // UUID
+  student_ids:  string[]   // UUIDs of all verified students
+  session_id?:  string     // optional — only present for legacy OTP sessions
 }
 
 function getSecret(): Uint8Array {
