@@ -28,9 +28,11 @@ export async function createServerSupabaseClient() {
 }
 
 export function createAdminSupabaseClient() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { autoRefreshToken: false, persistSession: false } }
-  )
+  // SCHOOL_SUPABASE_URL overrides NEXT_PUBLIC_SUPABASE_URL so the school data
+  // DB (xwgtsldimlrhtgvpnjnd) can be used even when the Vercel project's default
+  // Supabase env vars point to a different project.
+  const url = process.env.SCHOOL_SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL!
+  const key =
+    process.env.SCHOOL_SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY!
+  return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } })
 }
