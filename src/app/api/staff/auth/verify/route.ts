@@ -8,25 +8,21 @@ export const dynamic = 'force-dynamic'
  * POST /api/staff/auth/verify
  *
  * Knowledge-based staff authentication — no Supabase auth cookie required.
- * Staff prove identity by knowing: school code + email + TSC/ID number.
+ * Staff prove identity by knowing: email + TSC number OR national ID.
+ * School is resolved automatically from their staff record.
  *
- * Body: { school_code, email, tsc_number }
- *       OR { school_code, email, id_number }
+ * Body: { email, tsc_number }  OR  { email, id_number }
  *
  * Returns: { token, staff, school }
  */
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}))
-  const { school_code, email, tsc_number, id_number } = body as {
-    school_code?: string
+  const { email, tsc_number, id_number } = body as {
     email?:       string
     tsc_number?:  string
     id_number?:   string
   }
 
-  if (!school_code?.trim()) {
-    return NextResponse.json({ error: 'school_code is required' }, { status: 400 })
-  }
   if (!email?.trim()) {
     return NextResponse.json({ error: 'email is required' }, { status: 400 })
   }
@@ -39,28 +35,10 @@ export async function POST(req: NextRequest) {
 
   const svc = createAdminSupabaseClient()
 
-  // Resolve school via slug or short_code (same logic as parent auth)
-  const { data: tenant } = await svc
-    .from('tenant_configs')
-    .select('school_id, name')
-    .or(
-      `slug.eq.${school_code.trim().toLowerCase()},school_short_code.eq.${school_code.trim().toUpperCase()}`,
-    )
-    .limit(1)
-    .single()
-
-  if (!tenant) {
-    return NextResponse.json({ error: 'School code not recognised' }, { status: 404 })
-  }
-
-  const schoolId   = tenant.school_id as string
-  const schoolName = tenant.name as string
-
-  // Find staff by school + email
+  // Find staff by email — school is resolved from their record
   const { data: staffRows } = await svc
     .from('staff_records')
-    .select('id, full_name, sub_role, class_id, user_id, tsc_number, id_number, photo_url, subject_specialization, is_active, can_login')
-    .eq('school_id', schoolId)
+    .select('id, school_id, full_name, sub_role, class_id, user_id, tsc_number, id_number, photo_url, subject_specialization, is_active, can_login')
     .ilike('email', email.trim())
     .limit(3)
 
@@ -69,9 +47,10 @@ export async function POST(req: NextRequest) {
   }
 
   const staff = staffRows[0] as {
-    id: string; full_name: string; sub_role: string | null; class_id: string | null
-    user_id: string | null; tsc_number: string | null; id_number: string | null
-    photo_url: string | null; subject_specialization: string | null
+    id: string; school_id: string; full_name: string; sub_role: string | null
+    class_id: string | null; user_id: string | null; tsc_number: string | null
+    id_number: string | null; photo_url: string | null
+    subject_specialization: string | null
     is_active: boolean | null; can_login: boolean | null
   }
 
@@ -94,9 +73,16 @@ export async function POST(req: NextRequest) {
     )
   }
 
+  // Resolve school name from tenant_configs
+  const { data: tenant } = await svc
+    .from('tenant_configs')
+    .select('name')
+    .eq('school_id', staff.school_id)
+    .single()
+
   const token = await signStaffJWT({
     sub:       staff.id,
-    school_id: schoolId,
+    school_id: staff.school_id,
     user_id:   staff.user_id ?? '',
     role:      staff.sub_role ?? 'teacher',
     class_id:  staff.class_id ?? undefined,
@@ -112,6 +98,6 @@ export async function POST(req: NextRequest) {
       photo_url:   staff.photo_url,
       subject:     staff.subject_specialization,
     },
-    school: { id: schoolId, name: schoolName },
+    school: { id: staff.school_id, name: (tenant?.name as string | null) ?? 'Your School' },
   })
 }
