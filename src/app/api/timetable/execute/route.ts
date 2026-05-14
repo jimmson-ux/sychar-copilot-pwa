@@ -300,10 +300,14 @@ export async function GET(req: NextRequest) {
       .eq('can_login', true)
 
     type RawStaff = { id: string; full_name: string; teacher_initials: string | null; max_daily_lessons: number | null; reliability_index: number | null; department: string | null; sub_role: string | null }
-    const teachers = ((staffRaw ?? []) as RawStaff[]).filter(
-      s => !['principal','deputy_principal_academics','deputy_principal_academic',
-              'deputy_principal_admin','deputy_principal_discipline'].includes(s.sub_role ?? '')
-    ) as StaffRow[]
+    const teachers = ((staffRaw ?? []) as RawStaff[])
+      .filter(s => !['principal','deputy_principal_academics','deputy_principal_academic',
+                      'deputy_principal_admin','deputy_principal_discipline'].includes(s.sub_role ?? ''))
+      .map(s => ({
+        ...s,
+        max_daily_lessons: s.max_daily_lessons ?? 4,
+        reliability_index: s.reliability_index ?? 0.8,
+      })) as StaffRow[]
 
     if (teachers.length === 0) {
       throw new Error('No teaching staff found for this school')

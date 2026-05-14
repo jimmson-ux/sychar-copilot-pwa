@@ -71,6 +71,10 @@ export async function POST(request: Request) {
 
   const { base64, mimeType, documentType } = parsed.data
 
+  if (!process.env.GEMINI_API_KEY) {
+    return NextResponse.json({ success: false, error: 'OCR service not configured — contact support' }, { status: 503 })
+  }
+
   // 3. Call Gemini
   const prompt = GEMINI_PROMPTS[documentType] ?? GEMINI_PROMPTS['any-document']
 
