@@ -4,9 +4,9 @@ export const dynamic = 'force-dynamic'
 
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import dynamic from 'next/dynamic'
+import nextDynamic from 'next/dynamic'
 
-const BankSlipScanner = dynamic(() => import('./components/BankSlipScanner'), { ssr: false })
+const BankSlipScanner = nextDynamic(() => import('./components/BankSlipScanner'), { ssr: false })
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 

@@ -1,6 +1,5 @@
 /**
- * Next.js 16 proxy (replaces middleware.ts).
- * File: proxy.ts  |  Export: proxy()  |  Config: proxyConfig
+ * Edge middleware — auth gate, tenant resolution, role routing.
  *
  * Auth strategy (no DB calls — all cookie-based for speed):
  *   - Session gate : reads Supabase auth cookie directly
@@ -121,16 +120,13 @@ function dashboardFor(subRole: string): string {
   if (subRole === 'super_admin')      return '/super/dashboard'
   if (subRole === 'deputy_principal') return '/dashboard/deputy'
   if (subRole.startsWith('hod_'))     return '/dashboard/hod'
-  // deputy_principal_* variants (not the bare deputy_principal handled above)
   if (subRole.startsWith('deputy_principal_')) return '/dashboard/deputy-admin'
   return ROLE_ROUTES[subRole] ?? '/dashboard/teacher'
 }
 
-// Extract school slug from subdomain: nkoroi.sychar.co.ke → 'nkoroi'
 function extractSlug(req: NextRequest): string | null {
   const host  = (req.headers.get('host') ?? '').split(':')[0]
   const parts = host.split('.')
-  // Dev: next.config.ts injects x-school-slug header for localhost
   const devSlug = req.headers.get('x-school-slug')
   if (parts.length >= 4) {
     const sub      = parts[0]
@@ -148,7 +144,7 @@ async function resolveTenant(slug: string): Promise<Record<string, string> | nul
       `${SUPABASE_URL}/rest/v1/tenant_configs?slug=eq.${encodeURIComponent(slug)}&select=school_id,name,slug,school_short_code&limit=1`,
       {
         headers: { apikey: supabaseAnon, Authorization: `Bearer ${supabaseAnon}`, 'Accept-Profile': 'public' },
-        // @ts-ignore cf is Cloudflare-specific (not in standard RequestInit)
+        // @ts-ignore cf is Cloudflare-specific
         cf: { cacheTtl: 300, cacheEverything: true },
       }
     )
@@ -160,7 +156,6 @@ async function resolveTenant(slug: string): Promise<Record<string, string> | nul
   }
 }
 
-// Inject extra headers into both the forwarded request and the response
 function withHeaders(req: NextRequest, extra: Record<string, string>): NextResponse {
   if (!Object.keys(extra).length) return NextResponse.next()
   const reqHeaders = new Headers(req.headers)
@@ -170,13 +165,13 @@ function withHeaders(req: NextRequest, extra: Record<string, string>): NextRespo
   return res
 }
 
-// ── Proxy ─────────────────────────────────────────────────────────────────────
+// ── Middleware ────────────────────────────────────────────────────────────────
 
-export async function proxy(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   try {
     const { pathname } = request.nextUrl
 
-    // 1. Static assets — pass through immediately (no tenant resolution needed)
+    // 1. Static assets — pass through immediately
     if (
       pathname.startsWith('/_next/') ||
       pathname.startsWith('/favicon') ||
@@ -197,7 +192,6 @@ export async function proxy(request: NextRequest) {
         extraHeaders['x-school-name']       = tenant.name              ?? ''
         extraHeaders['x-school-short-code'] = tenant.school_short_code ?? ''
       } else if (!pathname.startsWith('/api/') && !pathname.startsWith('/parent/')) {
-        // Unknown subdomain → redirect to marketing site
         return NextResponse.redirect(new URL('https://sychar.co.ke'))
       }
     }
@@ -273,12 +267,12 @@ export async function proxy(request: NextRequest) {
     return res
 
   } catch (err) {
-    console.error('[proxy] error:', err)
+    console.error('[middleware] error:', err)
     return NextResponse.next()
   }
 }
 
-export const proxyConfig = {
+export const config = {
   matcher: [
     '/((?!_next/static|_next/image|favicon\\.ico).*)',
   ],
