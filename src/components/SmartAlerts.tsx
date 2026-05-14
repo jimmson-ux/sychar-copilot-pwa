@@ -1,6 +1,7 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import { triggerFeedback } from '@/lib/notification-feedback'
 
 interface Alert {
   id: string
@@ -22,6 +23,8 @@ export default function SmartAlerts({ userRole, schoolId }: SmartAlertsProps) {
   const [alerts, setAlerts] = useState<Alert[]>([])
   const [expanded, setExpanded] = useState(false)
   const [dismissed, setDismissed] = useState<Set<string>>(new Set())
+  const seenIds     = useRef<Set<string>>(new Set())
+  const initialized = useRef(false)
 
   useEffect(() => {
     const savedDismissed = JSON.parse(localStorage.getItem('sychar_dismissed_alerts') || '[]')
@@ -36,8 +39,21 @@ export default function SmartAlerts({ userRole, schoolId }: SmartAlertsProps) {
     try {
       const res = await fetch(`/api/dashboard/alerts?schoolId=${schoolId}&role=${userRole}`)
       if (!res.ok) return
-      const data = await res.json()
-      setAlerts(data.alerts ?? [])
+      const data = await res.json() as { alerts?: Alert[] }
+      const fetched: Alert[] = data.alerts ?? []
+
+      if (initialized.current) {
+        const newAlerts = fetched.filter(a => !seenIds.current.has(a.id))
+        if (newAlerts.length > 0) {
+          const hasCritical = newAlerts.some(a => a.type === 'critical')
+          const hasWarning  = newAlerts.some(a => a.type === 'warning')
+          triggerFeedback(hasCritical ? 'critical' : hasWarning ? 'warning' : 'info')
+        }
+      }
+
+      initialized.current = true
+      seenIds.current = new Set(fetched.map(a => a.id))
+      setAlerts(fetched)
     } catch {
       // Network error — show no alerts
     }

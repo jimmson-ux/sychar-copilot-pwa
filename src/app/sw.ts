@@ -196,6 +196,16 @@ async function sendHeartbeat(): Promise<void> {
 
 // ── Push notifications ─────────────────────────────────────────────────────────
 
+const PUSH_VIBRATE: Record<string, number[]> = {
+  critical:       [200, 100, 200, 100, 500],
+  warning:        [100, 100, 100],
+  info:           [60],
+  message:        [80, 60, 80],
+  login_approval: [300, 100, 300, 100, 300],
+  success:        [30, 50, 50],
+  error:          [400],
+}
+
 self.addEventListener('push', (event: PushEvent) => {
   if (!event.data) return
   const data = event.data.json() as {
@@ -204,18 +214,34 @@ self.addEventListener('push', (event: PushEvent) => {
     tag?: string
     type?: string
     url?: string
+    actions?: Array<{ action: string; title: string }>
   }
 
-  event.waitUntil(
-    self.registration.showNotification(data.title || 'Sychar School', {
-      body: data.body,
-      icon: '/icon-192.png',
-      badge: '/icon-192.png',
-      tag: data.tag || 'sychar-notification',
-      requireInteraction: data.type === 'alert',
-      data: { url: data.url || '/home' },
+  const feedbackType = data.type || 'info'
+  const vibratePattern = PUSH_VIBRATE[feedbackType] ?? [100, 50, 100]
+
+  // vibrate is a non-standard (but widely supported) SW Notification extension
+  const notifyPromise = self.registration.showNotification(data.title || 'Sychar School', {
+    body: data.body,
+    icon: '/icon-192.png',
+    badge: '/icon-192.png',
+    tag: data.tag || 'sychar-notification',
+    requireInteraction: feedbackType === 'login_approval' || feedbackType === 'alert',
+    actions: data.actions ?? [],
+    vibrate: vibratePattern,
+    data: { url: data.url || '/home' },
+  } as unknown as NotificationOptions)
+
+  // Notify open page tabs so they can play the matching in-app sound
+  const broadcastPromise = (self.clients as Clients)
+    .matchAll({ type: 'window', includeUncontrolled: true })
+    .then(clients => {
+      clients.forEach(c =>
+        c.postMessage({ type: 'PLAY_NOTIFICATION_SOUND', notificationType: feedbackType })
+      )
     })
-  )
+
+  event.waitUntil(Promise.all([notifyPromise, broadcastPromise]))
 })
 
 self.addEventListener('notificationclick', (event: NotificationEvent) => {

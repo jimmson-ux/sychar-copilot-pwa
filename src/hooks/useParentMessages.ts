@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { getSupabaseClient } from '@/lib/supabase'
+import { triggerFeedback } from '@/lib/notification-feedback'
 
 export type ParentMessage = {
   id: string
@@ -90,11 +91,7 @@ export function useParentMessages(parentId: string | null) {
           setMessages(prev => [...prev, newMsg])
 
           if (newMsg.sender_type !== 'parent') {
-            try {
-              const audio = new Audio('/sounds/notification.mp3')
-              audio.volume = 0.4
-              audio.play().catch(() => {})
-            } catch {}
+            triggerFeedback('message')
           }
 
           supabase

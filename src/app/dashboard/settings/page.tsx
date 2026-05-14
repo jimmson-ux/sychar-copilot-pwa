@@ -5,6 +5,8 @@ export const dynamic = 'force-dynamic'
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useSchoolId } from '@/hooks/useSchoolId'
+import { useNotificationFeedback } from '@/hooks/useNotificationFeedback'
+import type { FeedbackType } from '@/lib/notification-feedback'
 
 // ── Security card: TOTP setup + push subscription ─────────────────────────────
 function SecurityCard() {
@@ -211,6 +213,129 @@ function Toggle({
           }}
         />
       </button>
+    </div>
+  )
+}
+
+function InlineToggle({ enabled, onChange }: { enabled: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(!enabled)}
+      aria-pressed={enabled}
+      style={{
+        flexShrink: 0, position: 'relative', display: 'inline-flex',
+        height: 24, width: 44, borderRadius: 99, border: '2px solid transparent',
+        background: enabled ? '#14b8a6' : '#d1d5db',
+        cursor: 'pointer', transition: 'background 0.2s', outline: 'none',
+      }}
+    >
+      <span
+        style={{
+          display: 'inline-block', height: 20, width: 20, borderRadius: '50%',
+          background: 'white', boxShadow: '0 1px 4px rgba(0,0,0,0.2)',
+          transform: enabled ? 'translateX(20px)' : 'translateX(0)',
+          transition: 'transform 0.2s', pointerEvents: 'none',
+        }}
+      />
+    </button>
+  )
+}
+
+function NotificationFeedbackCard() {
+  const { settings, update, trigger } = useNotificationFeedback()
+  const [testActive, setTestActive] = useState<FeedbackType | null>(null)
+
+  function test(type: FeedbackType) {
+    setTestActive(type)
+    trigger(type)
+    setTimeout(() => setTestActive(null), 1000)
+  }
+
+  const TEST_TYPES: { type: FeedbackType; label: string; color: string; bg: string }[] = [
+    { type: 'critical',       label: 'Critical', color: '#ef4444', bg: '#fff1f2' },
+    { type: 'warning',        label: 'Warning',  color: '#f59e0b', bg: '#fef9f0' },
+    { type: 'info',           label: 'Info',     color: '#3b82f6', bg: '#eff6ff' },
+    { type: 'message',        label: 'Message',  color: '#8b5cf6', bg: '#f5f3ff' },
+    { type: 'login_approval', label: 'Login',    color: '#7c3aed', bg: '#ede9fe' },
+    { type: 'success',        label: 'Success',  color: '#16a34a', bg: '#f0fdf4' },
+  ]
+
+  return (
+    <div style={{ background: 'white', borderRadius: 18, border: '1px solid #e5e7eb', overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
+      <div style={{ padding: '16px 20px', borderBottom: '1px solid #eff6ff', background: '#eff6ff' }}>
+        <h2 style={{ fontWeight: 700, color: '#1f2937', margin: 0, fontSize: 15, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span>🔔</span> Alert Feedback
+        </h2>
+        <p style={{ fontSize: 12, color: '#6b7280', margin: '3px 0 0' }}>
+          Sound tones &amp; vibration for push alerts and in-app notifications
+        </p>
+      </div>
+
+      <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: 18 }}>
+
+        {/* Sound toggle */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+          <div>
+            <p style={{ fontSize: 13, fontWeight: 600, color: '#111827', margin: 0 }}>Notification Sounds</p>
+            <p style={{ fontSize: 11, color: '#6b7280', margin: '2px 0 0' }}>Distinct tones per alert severity via Web Audio</p>
+          </div>
+          <InlineToggle enabled={settings.soundEnabled} onChange={v => update({ soundEnabled: v })} />
+        </div>
+
+        {/* Volume */}
+        {settings.soundEnabled && (
+          <div>
+            <p style={{ fontSize: 11, fontWeight: 600, color: '#374151', margin: '0 0 8px', display: 'flex', justifyContent: 'space-between' }}>
+              <span>Volume</span>
+              <span style={{ color: '#9ca3af', fontWeight: 400 }}>{Math.round(settings.volume * 100)}%</span>
+            </p>
+            <input
+              type="range" min={0} max={1} step={0.05}
+              value={settings.volume}
+              onChange={e => update({ volume: parseFloat(e.target.value) })}
+              style={{ width: '100%', accentColor: '#1e40af', cursor: 'pointer' }}
+            />
+          </div>
+        )}
+
+        {/* Haptics toggle */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+          <div>
+            <p style={{ fontSize: 13, fontWeight: 600, color: '#111827', margin: 0 }}>Haptic Vibration</p>
+            <p style={{ fontSize: 11, color: '#6b7280', margin: '2px 0 0' }}>Vibration patterns on Android &amp; supported devices</p>
+          </div>
+          <InlineToggle enabled={settings.hapticEnabled} onChange={v => update({ hapticEnabled: v })} />
+        </div>
+
+        {/* Test buttons */}
+        <div>
+          <p style={{ fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.07em', margin: '0 0 10px' }}>
+            Test Alert Types
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
+            {TEST_TYPES.map(({ type, label, color, bg }) => (
+              <button
+                key={type}
+                onClick={() => test(type)}
+                style={{
+                  padding: '7px 4px', border: `1.5px solid ${testActive === type ? color : '#e5e7eb'}`,
+                  borderRadius: 8, background: testActive === type ? bg : 'white',
+                  color: testActive === type ? color : '#6b7280',
+                  fontSize: 11, fontWeight: 600, cursor: 'pointer',
+                  transition: 'all 0.15s', transform: testActive === type ? 'scale(0.96)' : 'scale(1)',
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <p style={{ fontSize: 11, color: '#b0b8c4', margin: 0, lineHeight: 1.5 }}>
+          Sounds use the Web Audio API — no downloads needed. Haptics require a mobile device.
+        </p>
+      </div>
     </div>
   )
 }
@@ -467,6 +592,9 @@ export default function SettingsPage() {
                 ))}
               </div>
             </div>
+
+            {/* Notification Feedback Card */}
+            <NotificationFeedbackCard />
 
             {/* Voice Bot Card */}
             <div style={{ background: 'white', borderRadius: 18, border: '2px dashed #e5e7eb', overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.03)' }}>

@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next'
 import { Space_Grotesk, DM_Sans } from 'next/font/google'
 import './globals.css'
 import InstallPrompt from '@/components/InstallPrompt'
+import NotificationSoundBridge from '@/components/NotificationSoundBridge'
 import { SchoolThemeProvider } from '@/components/providers/SchoolThemeProvider'
 
 const spaceGrotesk = Space_Grotesk({
@@ -109,6 +110,7 @@ export default function RootLayout({
         <SchoolThemeProvider>
           {children}
           <InstallPrompt />
+          <NotificationSoundBridge />
         </SchoolThemeProvider>
       </body>
     </html>
