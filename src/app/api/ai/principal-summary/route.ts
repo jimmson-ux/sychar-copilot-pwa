@@ -77,11 +77,10 @@ export async function POST(req: Request) {
       .select('id', { count: 'exact' })
       .eq('school_id', auth.schoolId!)
       .eq('status', 'pending'),
-    db.from('duty_assignments')
+    db.from('duty_roster')
       .select('id', { count: 'exact' })
       .eq('school_id', auth.schoolId!)
-      .gte('duty_date', today)
-      .lte('duty_date', today),
+      .eq('duty_date', today),
   ])
 
   // Attendance stats

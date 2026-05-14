@@ -147,7 +147,7 @@ async function resolveTenant(slug: string): Promise<Record<string, string> | nul
     const res = await fetch(
       `${SUPABASE_URL}/rest/v1/tenant_configs?slug=eq.${encodeURIComponent(slug)}&select=school_id,name,slug,school_short_code&limit=1`,
       {
-        headers: { apikey: supabaseAnon, Authorization: `Bearer ${supabaseAnon}` },
+        headers: { apikey: supabaseAnon, Authorization: `Bearer ${supabaseAnon}`, 'Accept-Profile': 'public' },
         // @ts-ignore cf is Cloudflare-specific (not in standard RequestInit)
         cf: { cacheTtl: 300, cacheEverything: true },
       }

@@ -24,8 +24,8 @@ const FDSE_RATES = [
 export async function GET(req: NextRequest) {
   const auth = await requireAuth()
   if (auth.unauthorized) return auth.unauthorized
-  if (auth.subRole !== 'principal') {
-    return NextResponse.json({ error: 'Forbidden: principal only' }, { status: 403 })
+  if (!['principal', 'bursar', 'accountant'].includes(auth.subRole)) {
+    return NextResponse.json({ error: 'Forbidden: principal/bursar only' }, { status: 403 })
   }
 
   const db   = svc()

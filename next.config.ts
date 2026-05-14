@@ -98,7 +98,7 @@ const nextConfig: NextConfig = {
       },
       // Dev: inject school slug so middleware can resolve tenant on localhost
       ...(process.env.NODE_ENV === 'development'
-        ? [{ source: '/(.*)', headers: [{ key: 'x-school-slug', value: 'nkoroi' }] }]
+        ? [{ source: '/(.*)', headers: [{ key: 'x-school-slug', value: 'nkoroimixed' }] }]
         : []),
   ],
 }

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/requireAuth'
 import { createAdminSupabaseClient } from '@/lib/supabase-server'
-import { generateText } from 'ai'
+import { generateObject } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
 import { google } from '@ai-sdk/google'
 import { z } from 'zod'
@@ -259,20 +259,20 @@ export async function POST(req: NextRequest) {
   let result: z.infer<typeof DutyRosterSchema>
 
   try {
-    const { object } = await generateText({
+    const { object } = await generateObject({
       model:     anthropic('claude-opus-4.7'),
       prompt,
+      schema:    DutyRosterSchema,
       maxTokens: 4000,
-      output:    { type: 'object', schema: DutyRosterSchema },
     })
     result = object as z.infer<typeof DutyRosterSchema>
   } catch {
     try {
-      const { object } = await generateText({
+      const { object } = await generateObject({
         model:     google('gemini-2.0-flash'),
         prompt,
+        schema:    DutyRosterSchema,
         maxTokens: 4000,
-        output:    { type: 'object', schema: DutyRosterSchema },
       })
       result = object as z.infer<typeof DutyRosterSchema>
     } catch (err) {

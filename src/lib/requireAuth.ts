@@ -68,8 +68,8 @@ export async function requireAuth(): Promise<AuthOk | AuthFail> {
   // Using the service client ensures we always get the row regardless of
   // whatever RLS policies are in effect on staff_records.
   const serviceClient = createClient(
-    supabaseUrl,
-    process.env.SUPABASE_SERVICE_ROLE_KEY ?? ''
+    process.env.SCHOOL_SUPABASE_URL ?? supabaseUrl,
+    process.env.SCHOOL_SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY ?? ''
   )
 
   const { data: staff } = await serviceClient

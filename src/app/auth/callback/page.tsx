@@ -42,11 +42,22 @@ function CallbackInner() {
 
       // Google OAuth: look up staff record and write role cookies
       const user = data.session.user
-      const { data: staff } = await supabase
+      const { data: staffById } = await supabase
         .from('staff_records')
         .select('sub_role, full_name, id, force_password_change')
         .eq('user_id', user.id)
         .maybeSingle()
+
+      // Email fallback — handles first-time Google sign-in where user_id hasn't been linked yet
+      let staff = staffById
+      if (!staff && user.email) {
+        const { data: byEmail } = await supabase
+          .from('staff_records')
+          .select('sub_role, full_name, id, force_password_change')
+          .eq('email', user.email.toLowerCase())
+          .maybeSingle()
+        staff = byEmail ?? null
+      }
 
       if (!staff) {
         setErrMsg('No staff record found for this Google account. Ask your admin to link your account.')
