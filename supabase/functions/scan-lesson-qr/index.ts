@@ -1,3 +1,13 @@
+/**
+ * scan-lesson-qr
+ *
+ * Teacher scans the class QR code to record lesson attendance.
+ * Integrates Genesis Protocol geofence: if the classroom is locked,
+ * the teacher's GPS must be within 15 m of the master location.
+ *
+ * GPS logging feeds the self-healing centroid refinement trigger.
+ */
+
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { corsHeaders, handleOptions } from '../_shared/cors.ts'
@@ -18,36 +28,43 @@ serve(async (req: Request) => {
     const auth = await verifyRequest(req)
     if (!auth) return json({ error: 'Unauthorized' }, 401)
 
-    const { qr_payload } = await req.json()
+    const {
+      qr_payload,
+      device_latitude,
+      device_longitude,
+      accuracy_radius,
+    } = await req.json() as {
+      qr_payload: string
+      device_latitude?: number
+      device_longitude?: number
+      accuracy_radius?: number
+    }
+
     if (!qr_payload) return json({ error: 'qr_payload required' }, 400)
 
-    // Parse and validate payload structure
+    // ── Parse + validate payload ─────────────────────────────────────────────
     let parsed: { v: number; school_id: string; class_id: string; seq: number; hash: string }
-    try {
-      parsed = JSON.parse(qr_payload)
-    } catch {
-      return json({ error: 'Invalid QR payload' }, 400)
+    try { parsed = JSON.parse(qr_payload) } catch {
+      return json({ error: 'Invalid QR payload — not a recognised Sychar QR code' }, 400)
     }
 
     if (parsed.school_id !== auth.schoolId) {
       return json({ error: 'QR code belongs to a different school' }, 403)
     }
 
-    // Recompute HMAC to verify tamper-proof hash
+    // ── HMAC verification ────────────────────────────────────────────────────
     const secret = Deno.env.get('SYCHAR_QR_SECRET') ?? 'sychar-dev-secret'
     const message = `${parsed.school_id}:${parsed.class_id}:${parsed.seq}`
-    const keyData = new TextEncoder().encode(secret)
-    const msgData = new TextEncoder().encode(message)
     const cryptoKey = await crypto.subtle.importKey(
-      'raw', keyData, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'],
+      'raw', new TextEncoder().encode(secret),
+      { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'],
     )
-    const sigBuf = await crypto.subtle.sign('HMAC', cryptoKey, msgData)
+    const sigBuf = await crypto.subtle.sign('HMAC', cryptoKey, new TextEncoder().encode(message))
     const expectedHash = Array.from(new Uint8Array(sigBuf))
-      .map((b) => b.toString(16).padStart(2, '0'))
-      .join('')
+      .map((b) => b.toString(16).padStart(2, '0')).join('')
 
     if (expectedHash !== parsed.hash) {
-      return json({ error: 'QR code signature invalid — possible tampering' }, 403)
+      return json({ error: 'QR code signature invalid — possible tampering detected' }, 403)
     }
 
     const svc = createClient(
@@ -55,7 +72,7 @@ serve(async (req: Request) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     )
 
-    // Fetch active QR token for this class
+    // ── Fetch active QR token ────────────────────────────────────────────────
     const { data: token } = await svc
       .from('class_qr_tokens')
       .select('id, generation_seq, scan_count')
@@ -66,10 +83,12 @@ serve(async (req: Request) => {
       .maybeSingle()
 
     if (!token) {
-      return json({ error: 'QR code is no longer active or has been revoked. Ask the issuer for a new code.' }, 403)
+      return json({
+        error: 'This QR code has been revoked or expired. Ask the deputy/dean to issue a new one.',
+      }, 403)
     }
 
-    // Fetch scanning teacher's staff record
+    // ── Fetch scanning teacher's staff record ────────────────────────────────
     const { data: staff } = await svc
       .from('staff_records')
       .select('id, full_name, sub_role')
@@ -77,9 +96,9 @@ serve(async (req: Request) => {
       .eq('school_id', auth.schoolId)
       .single()
 
-    if (!staff) return json({ error: 'Staff record not found' }, 403)
+    if (!staff) return json({ error: 'Staff record not found for your user account' }, 403)
 
-    // Verify teacher is assigned to THIS class right now via RPC
+    // ── Verify active timetable period ───────────────────────────────────────
     const { data: period } = await svc
       .rpc('get_active_period_for_class', {
         p_school_id: auth.schoolId,
@@ -89,23 +108,63 @@ serve(async (req: Request) => {
 
     if (!period) {
       return json({
-        error: 'No active lesson for this class right now. Check your timetable.',
+        error: 'No active lesson scheduled for this class right now. Check your timetable.',
       }, 400)
     }
 
-    // Confirm the scanning teacher is the assigned teacher
+    // ── Teacher assignment check ─────────────────────────────────────────────
     if (period.teacher_id && period.teacher_id !== staff.id) {
       return json({
         error: 'You are not the assigned teacher for this class this period.',
       }, 403)
     }
 
-    const nowEAT = new Date(Date.now() + 3 * 60 * 60 * 1000)
-    const nowTime = nowEAT.toTimeString().slice(0, 8)
-    const lateMinutes = computeLateMinutes(String(period.start_time), nowTime)
+    // ── GPS Geofence Check (Genesis Protocol integration) ────────────────────
+    let geoVerified = false
+    let geoMismatch = false
+    let distanceMeters: number | null = null
+    let geoNote: string | null = null
+    let classroomId: string | null = null
 
-    // Check for duplicate scan
+    if (device_latitude != null && device_longitude != null) {
+      // Look up the classroom for this period (by room name)
+      const { data: classroom } = await svc
+        .from('classrooms')
+        .select('id, room_name, is_geofence_locked, geo_latitude, geo_longitude')
+        .eq('school_id', auth.schoolId)
+        .ilike('room_name', period.period_id ? (period as any).room ?? '%' : '%')
+        .eq('is_geofence_locked', true)
+        .maybeSingle()
+
+      if (classroom?.is_geofence_locked && classroom.geo_latitude && classroom.geo_longitude) {
+        classroomId = classroom.id
+        distanceMeters = haversineMeters(
+          device_latitude, device_longitude,
+          Number(classroom.geo_latitude), Number(classroom.geo_longitude),
+        )
+
+        const gpsAccurate = !accuracy_radius || accuracy_radius < 20
+
+        if (!gpsAccurate) {
+          // GPS is too weak to make a meaningful geofence decision — allow but note
+          geoNote = `GPS accuracy too low (±${Math.round(accuracy_radius!)}m) for geofence verification.`
+        } else if (distanceMeters <= 15) {
+          geoVerified = true
+        } else {
+          geoMismatch = true
+          return json({
+            error: `You appear to be ${Math.round(distanceMeters)} m from ${classroom.room_name}. Walk closer to the classroom and scan again.`,
+            geo_mismatch: true,
+            distance_meters: Math.round(distanceMeters),
+          }, 400)
+        }
+      }
+    }
+
+    // ── Duplicate scan check ─────────────────────────────────────────────────
+    const nowEAT = new Date(Date.now() + 3 * 60 * 60 * 1000)
     const scanDate = nowEAT.toISOString().slice(0, 10)
+
     const { data: dupScan } = await svc
       .from('teacher_attendance_scans')
       .select('id, status, scanned_at')
@@ -115,18 +174,27 @@ serve(async (req: Request) => {
       .maybeSingle()
 
     if (dupScan) {
-      return json({ ok: true, already_scanned: true, status: dupScan.status, scanned_at: dupScan.scanned_at })
+      return json({
+        ok: true,
+        already_scanned: true,
+        status: dupScan.status,
+        scanned_at: dupScan.scanned_at,
+        geo_verified: geoVerified,
+      })
     }
 
+    // ── Calculate lateness ───────────────────────────────────────────────────
+    const nowTime = nowEAT.toTimeString().slice(0, 8)
+    const lateMinutes = computeLateMinutes(String(period.start_time), nowTime)
     const attendanceStatus = lateMinutes > 10 ? 'late' : 'present'
 
-    // Insert attendance scan
+    // ── Insert attendance scan ───────────────────────────────────────────────
     const { data: scan, error: scanErr } = await svc
       .from('teacher_attendance_scans')
       .insert({
         school_id: auth.schoolId,
         class_id: parsed.class_id,
-        class_name: token ? parsed.class_id : parsed.class_id,
+        class_name: parsed.class_id,
         subject: period.subject,
         teacher_id: staff.id,
         teacher_name: staff.full_name,
@@ -140,6 +208,7 @@ serve(async (req: Request) => {
         status: attendanceStatus,
         device_info: req.headers.get('user-agent') ?? null,
         ip_address: req.headers.get('x-forwarded-for') ?? null,
+        notes: geoNote,
       })
       .select('id')
       .single()
@@ -149,7 +218,7 @@ serve(async (req: Request) => {
       return json({ error: 'Failed to record attendance' }, 500)
     }
 
-    // Update QR token scan counter
+    // ── Update QR token scan counter ─────────────────────────────────────────
     await svc
       .from('class_qr_tokens')
       .update({
@@ -158,7 +227,20 @@ serve(async (req: Request) => {
       })
       .eq('id', token.id)
 
-    // Fetch today's scans for this teacher for Groq anomaly check
+    // ── Log GPS for centroid drift refinement ────────────────────────────────
+    if (geoVerified && classroomId && device_latitude != null && device_longitude != null) {
+      await svc.from('classroom_gps_logs').insert({
+        classroom_id: classroomId,
+        school_id: auth.schoolId,
+        teacher_id: staff.id,
+        scan_latitude: device_latitude,
+        scan_longitude: device_longitude,
+        accuracy_meters: accuracy_radius ?? null,
+        distance_to_center_m: distanceMeters ? Math.round(distanceMeters * 100) / 100 : null,
+      })
+    }
+
+    // ── Groq AI anomaly detection ────────────────────────────────────────────
     const { data: todayScans } = await svc
       .from('teacher_attendance_scans')
       .select('class_id, subject, scanned_at, status, late_minutes')
@@ -167,7 +249,7 @@ serve(async (req: Request) => {
 
     const anomalyFlag = await detectAnomalyWithGroq({
       teacherName: staff.full_name ?? 'Teacher',
-      newScan: { class_id: parsed.class_id, subject: period.subject, late_minutes: lateMinutes },
+      newScan: { class_id: parsed.class_id, subject: period.subject, late_minutes: lateMinutes, geo_verified: geoVerified },
       todayScans: todayScans ?? [],
     })
 
@@ -186,6 +268,9 @@ serve(async (req: Request) => {
       subject: period.subject,
       expected_start: period.start_time,
       expected_end: period.end_time,
+      geo_verified: geoVerified,
+      geo_note: geoNote,
+      distance_meters: distanceMeters ? Math.round(distanceMeters) : null,
       ai_flag: anomalyFlag.suspicious ? anomalyFlag.reason : null,
     })
   } catch (err) {
@@ -194,41 +279,31 @@ serve(async (req: Request) => {
   }
 })
 
+function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 6_371_000
+  const φ1 = (lat1 * Math.PI) / 180
+  const φ2 = (lat2 * Math.PI) / 180
+  const Δφ = ((lat2 - lat1) * Math.PI) / 180
+  const Δλ = ((lon2 - lon1) * Math.PI) / 180
+  const a = Math.sin(Δφ / 2) ** 2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) ** 2
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
+
 function computeLateMinutes(startTime: string, nowTime: string): number {
-  const toMinutes = (t: string) => {
-    const [h, m] = t.split(':').map(Number)
-    return h * 60 + m
-  }
-  const diff = toMinutes(nowTime) - toMinutes(startTime)
-  return Math.max(0, diff)
+  const toMin = (t: string) => { const [h, m] = t.split(':').map(Number); return h * 60 + m }
+  return Math.max(0, toMin(nowTime) - toMin(startTime))
 }
 
 async function detectAnomalyWithGroq(ctx: {
   teacherName: string
-  newScan: { class_id: string; subject: string | null; late_minutes: number }
+  newScan: { class_id: string; subject: string | null; late_minutes: number; geo_verified: boolean }
   todayScans: Array<{ class_id: string; subject: string | null; scanned_at: string; status: string; late_minutes: number | null }>
 }): Promise<{ suspicious: boolean; reason: string }> {
   const apiKey = Deno.env.get('GROQ_API_KEY')
-  if (!apiKey) return { suspicious: false, reason: '' }
+  if (!apiKey || ctx.todayScans.length < 2) return { suspicious: false, reason: '' }
 
-  // Quick heuristics before calling AI (save API cost)
-  if (ctx.todayScans.length < 2) return { suspicious: false, reason: '' }
-
-  const classCounts = ctx.todayScans.reduce((acc, s) => {
-    acc[s.class_id] = (acc[s.class_id] ?? 0) + 1
-    return acc
-  }, {} as Record<string, number>)
+  const classCounts = ctx.todayScans.reduce((acc, s) => ({ ...acc, [s.class_id]: (acc[s.class_id] ?? 0) + 1 }), {} as Record<string, number>)
   const hasDuplicate = Object.values(classCounts).some((c) => c > 1)
-
-  const systemPrompt = `You are an attendance anomaly detector for a Kenyan secondary school.
-Given a teacher's scans for today, identify if the new scan is suspicious.
-Reply with JSON only: {"suspicious": boolean, "reason": "short reason or empty string"}.
-Suspicious patterns: same class scanned twice, scanning outside lesson time, scanning more than 8 lessons per day.`
-
-  const userMsg = `Teacher: ${ctx.teacherName}
-Today's previous scans (${ctx.todayScans.length}): ${JSON.stringify(ctx.todayScans.map(s => ({ class_id: s.class_id, subject: s.subject, late_minutes: s.late_minutes })))}
-New scan: ${JSON.stringify(ctx.newScan)}
-Duplicate class detected by heuristic: ${hasDuplicate}`
 
   try {
     const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -240,21 +315,21 @@ Duplicate class detected by heuristic: ${hasDuplicate}`
         max_tokens: 80,
         response_format: { type: 'json_object' },
         messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userMsg },
+          {
+            role: 'system',
+            content: 'You are an attendance anomaly detector for a Kenyan secondary school. Reply with JSON only: {"suspicious":boolean,"reason":"short reason or empty string"}. Flag if: same class twice, >8 lessons per day, or geo not verified with suspicious pattern.',
+          },
+          {
+            role: 'user',
+            content: `Teacher: ${ctx.teacherName}\nPrevious scans today (${ctx.todayScans.length}): ${JSON.stringify(ctx.todayScans.map(s => ({ class: s.class_id, late: s.late_minutes })))}\nNew scan: ${JSON.stringify(ctx.newScan)}\nDuplicate class heuristic: ${hasDuplicate}`,
+          },
         ],
       }),
     })
-
     if (!res.ok) return { suspicious: false, reason: '' }
-
     const data = await res.json()
-    const content = data.choices?.[0]?.message?.content ?? '{}'
-    const parsed = JSON.parse(content)
-    return {
-      suspicious: !!parsed.suspicious,
-      reason: parsed.reason ?? '',
-    }
+    const parsed = JSON.parse(data.choices?.[0]?.message?.content ?? '{}')
+    return { suspicious: !!parsed.suspicious, reason: parsed.reason ?? '' }
   } catch {
     return { suspicious: false, reason: '' }
   }
