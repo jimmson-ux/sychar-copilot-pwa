@@ -128,13 +128,21 @@ serve(async (req: Request) => {
 
     if (device_latitude != null && device_longitude != null) {
       // Look up the classroom for this period (by room name)
-      const { data: classroom } = await svc
+      // Try to match the classroom for this period's venue.
+      // 1. Exact match on venue/room field from the period RPC.
+      // 2. Fallback: any locked classroom for this school.
+      const venue = (period as any).venue ?? (period as any).room ?? null
+      let classroomQuery = svc
         .from('classrooms')
-        .select('id, room_name, is_geofence_locked, geo_latitude, geo_longitude')
+        .select('id, room_name, is_geofence_locked, geo_latitude, geo_longitude, geofence_radius_m, genesis_accuracy_m')
         .eq('school_id', auth.schoolId)
-        .ilike('room_name', period.period_id ? (period as any).room ?? '%' : '%')
         .eq('is_geofence_locked', true)
-        .maybeSingle()
+
+      if (venue) {
+        classroomQuery = classroomQuery.ilike('room_name', venue.trim())
+      }
+
+      const { data: classroom } = await classroomQuery.maybeSingle()
 
       if (classroom?.is_geofence_locked && classroom.geo_latitude && classroom.geo_longitude) {
         classroomId = classroom.id
@@ -143,17 +151,21 @@ serve(async (req: Request) => {
           Number(classroom.geo_latitude), Number(classroom.geo_longitude),
         )
 
-        const gpsAccurate = !accuracy_radius || accuracy_radius < 20
+        // Use the per-room geofence radius set during genesis, default 20 m.
+        const geofenceRadius = Number(classroom.geofence_radius_m ?? 20)
+
+        // Teacher's phone GPS must be reasonable for indoor use.
+        const gpsAccurate = !accuracy_radius || accuracy_radius < 25
 
         if (!gpsAccurate) {
-          // GPS is too weak to make a meaningful geofence decision — allow but note
-          geoNote = `GPS accuracy too low (±${Math.round(accuracy_radius!)}m) for geofence verification.`
-        } else if (distanceMeters <= 15) {
+          geoNote = `GPS accuracy too low (±${Math.round(accuracy_radius!)} m) for geofence verification.`
+        } else if (distanceMeters <= geofenceRadius) {
           geoVerified = true
         } else {
           geoMismatch = true
           return json({
-            error: `You appear to be ${Math.round(distanceMeters)} m from ${classroom.room_name}. Walk closer to the classroom and scan again.`,
+            error: `You appear to be ${Math.round(distanceMeters)} m from ${classroom.room_name} ` +
+                   `(geofence: ${Math.round(geofenceRadius)} m). Walk to the classroom and scan again.`,
             geo_mismatch: true,
             distance_meters: Math.round(distanceMeters),
           }, 400)
@@ -228,15 +240,25 @@ serve(async (req: Request) => {
       .eq('id', token.id)
 
     // ── Log GPS for centroid drift refinement ────────────────────────────────
-    if (geoVerified && classroomId && device_latitude != null && device_longitude != null) {
+    // Log verified scans AND accurate readings within 2× the geofence radius
+    // so the self-heal trigger has more high-quality data to refine the centroid.
+    const shouldLog =
+      classroomId &&
+      device_latitude != null &&
+      device_longitude != null &&
+      accuracy_radius != null &&
+      accuracy_radius <= 20 &&                   // only log when GPS is meaningful
+      distanceMeters != null &&
+      distanceMeters <= 60                        // within 3× worst-case geofence
+    if (shouldLog) {
       await svc.from('classroom_gps_logs').insert({
-        classroom_id: classroomId,
-        school_id: auth.schoolId,
-        teacher_id: staff.id,
-        scan_latitude: device_latitude,
-        scan_longitude: device_longitude,
-        accuracy_meters: accuracy_radius ?? null,
-        distance_to_center_m: distanceMeters ? Math.round(distanceMeters * 100) / 100 : null,
+        classroom_id:         classroomId,
+        school_id:            auth.schoolId,
+        teacher_id:           staff.id,
+        scan_latitude:        device_latitude,
+        scan_longitude:       device_longitude,
+        accuracy_meters:      accuracy_radius,
+        distance_to_center_m: distanceMeters != null ? Math.round(distanceMeters * 100) / 100 : null,
       })
     }
 
