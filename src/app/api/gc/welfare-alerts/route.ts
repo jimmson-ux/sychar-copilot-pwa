@@ -54,17 +54,17 @@ export async function POST(req: Request) {
       .eq('student_id', studentId)
       .gte('date', thirtyDaysAgo)
       .order('date', { ascending: false }),
-    db.from('exam_scores')
-      .select('score, max_score, exam_date, subject_id')
+    db.from('marks')
+      .select('percentage, created_at, subject_id')
       .eq('school_id', auth.schoolId!)
       .eq('student_id', studentId)
-      .order('exam_date', { ascending: false })
+      .order('created_at', { ascending: false })
       .limit(10),
     db.from('discipline_records')
-      .select('severity, incident_date')
+      .select('severity, created_at')
       .eq('school_id', auth.schoolId!)
       .eq('student_id', studentId)
-      .gte('incident_date', thirtyDaysAgo),
+      .gte('created_at', thirtyDaysAgo),
     db.from('students')
       .select('full_name, class_name, admission_no')
       .eq('id', studentId)
@@ -87,17 +87,17 @@ export async function POST(req: Request) {
   const absenceRate = totalDays > 0 ? Math.round((absentDays / totalDays) * 100) : 0
 
   const examAvg = exams.length > 0
-    ? Math.round(exams.reduce((s, e) => s + (Number(e.score ?? 0) / (e.max_score ?? 100)) * 100, 0) / exams.length)
+    ? Math.round(exams.reduce((s, e) => s + Number(e.percentage ?? 0), 0) / exams.length)
     : null
 
-  // Score trend: compare last 3 vs previous 3 exams
+  // Score trend: compare recent half vs older half
   let scoreTrend = 'insufficient data'
   if (exams.length >= 4) {
     const recent = exams.slice(0, Math.ceil(exams.length / 2))
     const older  = exams.slice(Math.ceil(exams.length / 2))
-    const recentAvg = recent.reduce((s, e) => s + (Number(e.score ?? 0) / (e.max_score ?? 100)), 0) / recent.length
-    const olderAvg  = older.reduce((s, e) => s + (Number(e.score ?? 0) / (e.max_score ?? 100)), 0) / older.length
-    const delta = Math.round((recentAvg - olderAvg) * 100)
+    const recentAvg = recent.reduce((s, e) => s + Number(e.percentage ?? 0), 0) / recent.length
+    const olderAvg  = older.reduce((s, e) => s + Number(e.percentage ?? 0), 0) / older.length
+    const delta = Math.round(recentAvg - olderAvg)
     scoreTrend = delta >= 5 ? `improving (+${delta}%)` : delta <= -5 ? `declining (${delta}%)` : 'stable'
   }
 

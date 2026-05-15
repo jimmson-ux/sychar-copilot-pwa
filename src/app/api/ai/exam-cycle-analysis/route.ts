@@ -45,8 +45,8 @@ export async function POST(req: Request) {
 
   // Fetch exam scores with subject and student context
   const { data: scores } = await db
-    .from('exam_scores')
-    .select('score, max_score, subject_id, student_id, exam_date')
+    .from('marks')
+    .select('percentage, subject_id, student_id, created_at')
     .eq('school_id', auth.schoolId!)
     .eq('term', String(term))
     .eq('academic_year', year)
@@ -63,29 +63,29 @@ export async function POST(req: Request) {
   }
 
   // Aggregate per subject
-  const subjectStats: Record<string, { name: string; scores: number[]; maxScore: number }> = {}
+  const subjectStats: Record<string, { name: string; scores: number[] }> = {}
   for (const row of (scores ?? [])) {
     if (!row.subject_id) continue
     const name = subjectMap[row.subject_id] ?? row.subject_id
     if (!subjectStats[row.subject_id]) {
-      subjectStats[row.subject_id] = { name, scores: [], maxScore: row.max_score ?? 100 }
+      subjectStats[row.subject_id] = { name, scores: [] }
     }
-    subjectStats[row.subject_id].scores.push(Number(row.score ?? 0))
+    subjectStats[row.subject_id].scores.push(Number(row.percentage ?? 0))
   }
 
   const subjectSummary = Object.values(subjectStats).map(s => {
     const avg = s.scores.length > 0
       ? Math.round(s.scores.reduce((a, b) => a + b, 0) / s.scores.length)
       : 0
-    const passing = s.scores.filter(sc => sc >= (s.maxScore * 0.5)).length
+    const passing = s.scores.filter(sc => sc >= 50).length
     const failRate = s.scores.length > 0
       ? Math.round(((s.scores.length - passing) / s.scores.length) * 100)
       : 0
-    return `${s.name}: avg ${avg}/${s.maxScore}, fail rate ${failRate}% (n=${s.scores.length})`
+    return `${s.name}: avg ${avg}%, fail rate ${failRate}% (n=${s.scores.length})`
   }).join('\n')
 
   const totalStudents = new Set((scores ?? []).map(r => r.student_id)).size
-  const atRisk = (scores ?? []).filter(r => Number(r.score ?? 0) < (r.max_score ?? 100) * 0.4)
+  const atRisk = (scores ?? []).filter(r => Number(r.percentage ?? 0) < 40)
   const atRiskStudents = new Set(atRisk.map(r => r.student_id)).size
 
   const context = `

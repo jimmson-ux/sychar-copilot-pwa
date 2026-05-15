@@ -14,12 +14,16 @@ function svc() {
 
 const ALLOWED = new Set(['principal', 'bursar'])
 
+const mpesaBase = process.env.MPESA_ENV === 'production'
+  ? 'https://api.safaricom.co.ke'
+  : 'https://sandbox.safaricom.co.ke'
+
 async function getDarajaToken(): Promise<string> {
   const key    = process.env.MPESA_CONSUMER_KEY!
   const secret = process.env.MPESA_CONSUMER_SECRET!
   const creds  = Buffer.from(`${key}:${secret}`).toString('base64')
   const res = await fetch(
-    'https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials',
+    `${mpesaBase}/oauth/v1/generate?grant_type=client_credentials`,
     { headers: { Authorization: `Basic ${creds}` } }
   )
   const data = await res.json() as { access_token: string }
@@ -27,6 +31,10 @@ async function getDarajaToken(): Promise<string> {
 }
 
 export async function POST(req: NextRequest) {
+  if (!process.env.MPESA_CONSUMER_KEY || !process.env.MPESA_CONSUMER_SECRET) {
+    return NextResponse.json({ error: 'M-Pesa not configured — contact school admin.' }, { status: 503 })
+  }
+
   const auth = await requireAuth()
   if (auth.unauthorized) return auth.unauthorized
   if (!ALLOWED.has(auth.subRole)) {
@@ -49,7 +57,7 @@ export async function POST(req: NextRequest) {
   // Verify student belongs to this school
   const { data: student } = await db
     .from('students')
-    .select('id, full_name, admission_number')
+    .select('id, full_name, admission_no')
     .eq('id', body.studentId)
     .eq('school_id', auth.schoolId!)
     .single()
@@ -73,7 +81,7 @@ export async function POST(req: NextRequest) {
   try {
     const token = await getDarajaToken()
     const stkRes = await fetch(
-      'https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest',
+      `${mpesaBase}/mpesa/stkpush/v1/processrequest`,
       {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
@@ -87,7 +95,7 @@ export async function POST(req: NextRequest) {
           PartyB: shortcode,
           PhoneNumber: phone,
           CallBackURL: callbackUrl,
-          AccountReference: student.admission_number ?? student.id.slice(0, 8),
+          AccountReference: student.admission_no ?? student.id.slice(0, 8),
           TransactionDesc: body.description ?? `Fee payment — ${student.full_name}`,
         }),
       }
