@@ -6,7 +6,11 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const SUPABASE_URL         = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-const ANTHROPIC_API_KEY    = Deno.env.get('ANTHROPIC_API_KEY')!
+const GROQ_API_KEY         = Deno.env.get('GROQ_API_KEY') ?? ''
+const OPENAI_API_KEY       = Deno.env.get('OPENAI_API_KEY') ?? ''
+const AI_KEY               = GROQ_API_KEY || OPENAI_API_KEY
+const AI_URL               = GROQ_API_KEY ? 'https://api.groq.com/openai/v1/chat/completions' : 'https://api.openai.com/v1/chat/completions'
+const AI_MODEL             = GROQ_API_KEY ? 'llama-3.3-70b-versatile' : 'gpt-4o-mini'
 const AT_API_KEY           = Deno.env.get('AT_API_KEY')!
 const AT_USERNAME          = Deno.env.get('AT_USERNAME') ?? 'sandbox'
 const AT_SENDER_ID         = Deno.env.get('AT_SENDER_ID') ?? ''
@@ -90,7 +94,7 @@ Deno.serve(async (req: Request) => {
         functionsRes,
       ] = await Promise.all([
         // Yesterday student attendance
-        db.from('student_attendance')
+        db.from('attendance_records')
           .select('status')
           .eq('school_id', schoolId)
           .eq('date', yestISO),
@@ -182,45 +186,25 @@ Deno.serve(async (req: Request) => {
         schoolFunctionsToday: todayFunctions,
       })
 
-      const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
+      const claudeRes = await fetch(AI_URL, {
         method: 'POST',
         headers: {
-          'x-api-key':         ANTHROPIC_API_KEY,
-          'anthropic-version': '2023-06-01',
-          'content-type':      'application/json',
+          'Authorization': `Bearer ${AI_KEY}`,
+          'content-type':  'application/json',
         },
         body: JSON.stringify({
-          model:      'claude-haiku-4-5-20251001',
+          model:      AI_MODEL,
           max_tokens: 400,
-          system: 'You are a school management AI assistant. Generate a concise morning brief for a Kenyan secondary school principal. Use the exact format specified. Be direct, specific, and actionable.',
-          messages: [{
-            role: 'user',
-            content: `Generate a morning brief from this school data. Use this exact format:
-
-"Good morning [Principal Name]. Here is your school snapshot for [date]:
-
-📊 ATTENDANCE: [X]% yesterday ([Y] absent). [Flag if below 80%]
-👨‍🏫 STAFF: [X] teachers on TOD duty today. [Any absences flagged]
-🏥 HEALTH: [X] clinic visits yesterday.
-📋 PENDING: [X] approvals need your attention.
-💰 FEES: KES [X] collected yesterday.
-⚠️ DISCIPLINE: [X] critical cases unresolved.
-📚 COMPLIANCE: [X] teachers in red zone.
-🎯 TODAY: [TOD names]. [Any school functions]
-
-Top 3 actions for today:
-1. [Most urgent]
-2. [Second most urgent]
-3. [Third most urgent]"
-
-School data: ${dataContext}`,
-          }],
+          messages: [
+            { role: 'system', content: 'You are a school management AI assistant. Generate a concise morning brief for a Kenyan secondary school principal. Use the exact format specified. Be direct, specific, and actionable.' },
+            { role: 'user', content: `Generate a morning brief from this school data. Use this exact format:\n\n"Good morning [Principal Name]. Here is your school snapshot for [date]:\n\n📊 ATTENDANCE: [X]% yesterday ([Y] absent). [Flag if below 80%]\n👨‍🏫 STAFF: [X] teachers on TOD duty today. [Any absences flagged]\n🏥 HEALTH: [X] clinic visits yesterday.\n📋 PENDING: [X] approvals need your attention.\n💰 FEES: KES [X] collected yesterday.\n⚠️ DISCIPLINE: [X] critical cases unresolved.\n📚 COMPLIANCE: [X] teachers in red zone.\n🎯 TODAY: [TOD names]. [Any school functions]\n\nTop 3 actions for today:\n1. [Most urgent]\n2. [Second most urgent]\n3. [Third most urgent]"\n\nSchool data: ${dataContext}` },
+          ],
         }),
       })
 
-      if (!claudeRes.ok) throw new Error(`Claude API error: ${claudeRes.status}`)
-      const claudeData = await claudeRes.json() as { content?: { text: string }[] }
-      const brief = claudeData.content?.[0]?.text ?? ''
+      if (!claudeRes.ok) throw new Error(`Groq API error: ${claudeRes.status}`)
+      const claudeData = await claudeRes.json() as { choices?: { message: { content: string } }[] }
+      const brief = claudeData.choices?.[0]?.message?.content ?? ''
 
       // ── 5. Send SMS ────────────────────────────────────────────────────────
       // Truncate for SMS (160 chars per segment, AT handles multi-part)

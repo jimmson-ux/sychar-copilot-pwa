@@ -154,33 +154,38 @@ serve(async (req: Request) => {
       })
     }
 
-    const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY')
-    if (!ANTHROPIC_API_KEY) throw new Error('Anthropic API key not configured')
+    const GROQ_API_KEY   = Deno.env.get('GROQ_API_KEY') ?? ''
+    const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY') ?? ''
+    const AI_KEY   = GROQ_API_KEY || OPENAI_API_KEY
+    const AI_URL   = GROQ_API_KEY ? 'https://api.groq.com/openai/v1/chat/completions' : 'https://api.openai.com/v1/chat/completions'
+    const AI_MODEL = GROQ_API_KEY ? 'llama-3.3-70b-versatile' : 'gpt-4o-mini'
+    if (!AI_KEY) throw new Error('No AI API key configured (set GROQ_API_KEY or OPENAI_API_KEY)')
 
     const prompt = buildPrompt(insightType, typeof context === 'string' ? context : JSON.stringify(context))
 
-    const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
+    const claudeRes = await fetch(AI_URL, {
       method: 'POST',
       headers: {
-        'x-api-key':         ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01',
-        'content-type':      'application/json',
+        'Authorization': `Bearer ${AI_KEY}`,
+        'content-type':  'application/json',
       },
       body: JSON.stringify({
-        model:      'claude-haiku-4-5-20251001',
+        model:      AI_MODEL,
         max_tokens: insightType === 'invigilation_suggest' ? 600 : 400,
-        system:     SYSTEM_PROMPT,
-        messages:   [{ role: 'user', content: prompt }],
+        messages: [
+          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'user',   content: prompt },
+        ],
       }),
     })
 
     if (!claudeRes.ok) {
       const errText = await claudeRes.text()
-      throw new Error(`Claude API error ${claudeRes.status}: ${errText}`)
+      throw new Error(`Groq API error ${claudeRes.status}: ${errText}`)
     }
 
-    const claudeData = await claudeRes.json() as { content?: { text: string }[] }
-    const insight    = claudeData.content?.[0]?.text ?? ''
+    const claudeData = await claudeRes.json() as { choices?: { message: { content: string } }[] }
+    const insight    = claudeData.choices?.[0]?.message?.content ?? ''
 
     const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2')
     const supabase = createClient(
