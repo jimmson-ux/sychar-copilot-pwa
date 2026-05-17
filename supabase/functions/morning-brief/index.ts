@@ -22,8 +22,14 @@ async function sendSMS(to: string, message: string): Promise<void> {
 }
 
 Deno.serve(async (req: Request) => {
-  if (req.method !== 'POST') {
-    return new Response(JSON.stringify({ ok: false }), { status: 405 })
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { status: 200 })
+  }
+
+  // Cron-secret auth (deployed with verify_jwt=false — pg_cron caller authenticates via this header)
+  const cronSecret = req.headers.get('x-cron-secret')
+  if (!cronSecret || cronSecret !== Deno.env.get('CRON_SECRET')) {
+    return new Response(JSON.stringify({ ok: false, error: 'Unauthorized' }), { status: 401 })
   }
 
   const db = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY)

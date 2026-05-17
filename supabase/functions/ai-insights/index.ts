@@ -130,12 +130,19 @@ serve(async (req: Request) => {
   }
 
   try {
-    const auth = await verifyRequest(req)
-    if (!auth) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401,
-        headers: { 'Content-Type': 'application/json', ...corsHeaders(origin) },
-      })
+    // Cron path: pg_cron sends x-cron-secret instead of a user JWT
+    const cronSecret = req.headers.get('x-cron-secret')
+    const isCron = !!cronSecret && cronSecret === Deno.env.get('CRON_SECRET')
+
+    let auth: { userId: string; schoolId: string; role: string } | null = null
+    if (!isCron) {
+      auth = await verifyRequest(req)
+      if (!auth) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+          status: 401,
+          headers: { 'Content-Type': 'application/json', ...corsHeaders(origin) },
+        })
+      }
     }
 
     const { context, insightType } = await req.json()
@@ -182,8 +189,8 @@ serve(async (req: Request) => {
     )
 
     await supabase.from('ai_insights').insert([{
-      school_id:    auth.schoolId,
-      generated_by: auth.userId,
+      school_id:    auth?.schoolId ?? null,
+      generated_by: auth?.userId ?? null,
       insight_type: insightType,
       content:      insight,
       created_at:   new Date().toISOString(),
