@@ -4,7 +4,6 @@
 export const dynamic = 'force-dynamic'
 
 import { createClient } from '@supabase/supabase-js'
-import Anthropic from '@anthropic-ai/sdk'
 import { NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/requireAuth'
 import { rateLimit, LIMITS } from '@/lib/rateLimit'
@@ -37,7 +36,7 @@ export async function POST(req: Request) {
   const term  = body.term ?? String(month <= 4 ? 1 : month <= 8 ? 2 : 3)
   const year  = body.academic_year ?? String(new Date().getFullYear())
 
-  if (!process.env.ANTHROPIC_API_KEY) {
+  if (!process.env.GROQ_API_KEY) {
     return NextResponse.json({ error: 'AI service not configured' }, { status: 503 })
   }
 
@@ -97,13 +96,18 @@ Subject performance:
 ${subjectSummary || 'No exam data available'}
 `.trim()
 
-  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
-  const msg = await client.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 800,
-    messages: [{
-      role: 'user',
-      content: `You are an academic analyst for a Kenyan secondary school. Analyze the following exam data and return ONLY valid JSON with no markdown:
+  const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'llama-3.3-70b-versatile',
+      max_tokens: 800,
+      messages: [{
+        role: 'user',
+        content: `You are an academic analyst for a Kenyan secondary school. Analyze the following exam data and return ONLY valid JSON with no markdown:
 
 {
   "trend_summary": "2-3 sentence overall academic health summary",
@@ -114,10 +118,12 @@ ${subjectSummary || 'No exam data available'}
 
 School data:
 ${context}`,
-    }],
+      }],
+    }),
   })
-
-  const rawText = msg.content[0].type === 'text' ? msg.content[0].text : '{}'
+  if (!groqRes.ok) return NextResponse.json({ error: 'AI service error' }, { status: 502 })
+  const groqData = await groqRes.json() as { choices?: { message: { content: string } }[] }
+  const rawText = groqData.choices?.[0]?.message?.content ?? '{}'
   let analysis: Record<string, unknown>
   try {
     analysis = JSON.parse(rawText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim())

@@ -5,7 +5,6 @@
 export const dynamic = 'force-dynamic'
 
 import { createClient } from '@supabase/supabase-js'
-import Anthropic from '@anthropic-ai/sdk'
 import { NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/requireAuth'
 import { rateLimit, LIMITS } from '@/lib/rateLimit'
@@ -39,7 +38,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'studentId required' }, { status: 400 })
   }
 
-  if (!process.env.ANTHROPIC_API_KEY) {
+  if (!process.env.GROQ_API_KEY) {
     return NextResponse.json({ error: 'AI service not configured' }, { status: 503 })
   }
 
@@ -112,13 +111,18 @@ Last 30 days:
 - Discipline incidents: ${discipline.length} total, ${severeDiscipline} severe (critical/major)
 `.trim()
 
-  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
-  const msg = await client.messages.create({
-    model: 'claude-haiku-4-5',
-    max_tokens: 400,
-    messages: [{
-      role: 'user',
-      content: `You are a student welfare AI for a Kenyan secondary school. Assess this student's welfare risk.
+  const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'llama-3.1-8b-instant',
+      max_tokens: 400,
+      messages: [{
+        role: 'user',
+        content: `You are a student welfare AI for a Kenyan secondary school. Assess this student's welfare risk.
 
 ${context}
 
@@ -130,10 +134,12 @@ Return ONLY valid JSON:
 }
 
 risk_score: 0-100 (0=no concern, 40=monitor, 70=refer, 90=urgent)`,
-    }],
+      }],
+    }),
   })
-
-  const rawText = msg.content[0].type === 'text' ? msg.content[0].text : '{}'
+  if (!groqRes.ok) return NextResponse.json({ error: 'AI service error' }, { status: 502 })
+  const groqData = await groqRes.json() as { choices?: { message: { content: string } }[] }
+  const rawText = groqData.choices?.[0]?.message?.content ?? '{}'
   let aiResult: { risk_score?: number; risk_factors?: string[]; recommendation?: string }
   try {
     aiResult = JSON.parse(rawText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim())
