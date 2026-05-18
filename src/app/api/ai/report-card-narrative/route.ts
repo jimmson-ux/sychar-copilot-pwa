@@ -3,7 +3,6 @@
 
 export const dynamic = 'force-dynamic'
 
-import Anthropic from '@anthropic-ai/sdk'
 import { NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/requireAuth'
 import { rateLimit, LIMITS } from '@/lib/rateLimit'
@@ -49,17 +48,20 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'studentName required' }, { status: 400 })
   }
 
-  if (!process.env.ANTHROPIC_API_KEY) {
+  const groqKey = process.env.GROQ_API_KEY
+  if (!groqKey) {
     return NextResponse.json({ error: 'AI service not configured' }, { status: 503 })
   }
 
-  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
-  const msg = await client.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 300,
-    messages: [{
-      role: 'user',
-      content: `Write a concise, professional 4-sentence report card comment for a Kenyan secondary school student.
+  const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${groqKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'llama-3.3-70b-versatile',
+      max_tokens: 300,
+      messages: [{
+        role: 'user',
+        content: `Write a concise, professional 4-sentence report card comment for a Kenyan secondary school student.
 
 Student: ${studentName}
 Average score: ${averageScore}%
@@ -75,10 +77,13 @@ Rules:
 - Suitable for parents to read
 - Do NOT include student name in output (it will be added separately)
 - Plain text only, no JSON, no markdown`,
-    }],
+      }],
+    }),
   })
 
-  const narrative = msg.content[0].type === 'text' ? msg.content[0].text.trim() : ''
+  if (!groqRes.ok) return NextResponse.json({ error: 'AI service unavailable' }, { status: 502 })
+  const groqData = await groqRes.json() as { choices?: { message: { content: string } }[] }
+  const narrative = (groqData.choices?.[0]?.message?.content ?? '').trim()
 
   return NextResponse.json({ narrative, generatedAt: new Date().toISOString() })
 }

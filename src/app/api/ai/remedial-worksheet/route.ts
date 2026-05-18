@@ -3,7 +3,6 @@
 
 export const dynamic = 'force-dynamic'
 
-import Anthropic from '@anthropic-ai/sdk'
 import { NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/requireAuth'
 import { rateLimit, LIMITS } from '@/lib/rateLimit'
@@ -38,17 +37,20 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'subject and topic required' }, { status: 400 })
   }
 
-  if (!process.env.ANTHROPIC_API_KEY) {
+  const groqKey = process.env.GROQ_API_KEY
+  if (!groqKey) {
     return NextResponse.json({ error: 'AI service not configured' }, { status: 503 })
   }
 
-  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
-  const msg = await client.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 1200,
-    messages: [{
-      role: 'user',
-      content: `You are an expert Kenyan secondary school curriculum specialist. Create remedial resources for:
+  const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${groqKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'llama-3.3-70b-versatile',
+      max_tokens: 1200,
+      messages: [{
+        role: 'user',
+        content: `You are an expert Kenyan secondary school curriculum specialist. Create remedial resources for:
 - Subject: ${subject}
 - Topic: ${topic}
 - Class level: ${classLevel || 'Secondary'}
@@ -59,10 +61,13 @@ Return ONLY valid JSON with no markdown:
   "teacher_diagnostic_insight": "2-3 sentences on likely root causes and teaching strategies to address them",
   "student_worksheet_markdown": "A structured markdown worksheet with: (1) brief concept recap, (2) 5 practice questions graded easy→hard, (3) one real-world application question relevant to Kenyan context"
 }`,
-    }],
+      }],
+    }),
   })
 
-  const rawText = msg.content[0].type === 'text' ? msg.content[0].text : '{}'
+  if (!groqRes.ok) return NextResponse.json({ error: 'AI service unavailable' }, { status: 502 })
+  const groqData = await groqRes.json() as { choices?: { message: { content: string } }[] }
+  const rawText = groqData.choices?.[0]?.message?.content ?? '{}'
   let result: { teacher_diagnostic_insight?: string; student_worksheet_markdown?: string }
   try {
     result = JSON.parse(rawText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim())

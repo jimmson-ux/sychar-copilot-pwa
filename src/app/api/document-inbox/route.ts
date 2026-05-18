@@ -8,7 +8,6 @@ export const dynamic = 'force-dynamic'
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/requireAuth'
-import Anthropic from '@anthropic-ai/sdk'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 
 function svc() {
@@ -133,27 +132,35 @@ Document (base64 encoded): ${rawText.slice(0, 50000)}`
     // Non-fatal — continue with Claude summary
   }
 
-  // ── Claude human-readable summary ─────────────────────────────────────────
+  // ── AI human-readable summary ─────────────────────────────────────────────
   let claudeSummary = ''
 
   try {
-    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
-    const contextText = geminiExtracted
-      ? `Title: ${geminiExtracted.title}\nCircular: ${geminiExtracted.circular_number}\nDate: ${geminiExtracted.date}\nSummary: ${geminiExtracted.summary}\nAction Required: ${geminiExtracted.action_required}\nDeadlines: ${JSON.stringify(geminiExtracted.deadlines)}`
-      : `Document URL: ${fileUrl}`
+    const groqKey = process.env.GROQ_API_KEY
+    if (groqKey) {
+      const contextText = geminiExtracted
+        ? `Title: ${geminiExtracted.title}\nCircular: ${geminiExtracted.circular_number}\nDate: ${geminiExtracted.date}\nSummary: ${geminiExtracted.summary}\nAction Required: ${geminiExtracted.action_required}\nDeadlines: ${JSON.stringify(geminiExtracted.deadlines)}`
+        : `Document URL: ${fileUrl}`
 
-    const msg = await anthropic.messages.create({
-      model:      'claude-sonnet-4-6',
-      max_tokens: 300,
-      messages: [{
-        role:    'user',
-        content: `Summarize this Kenyan Ministry of Education document for a school principal. Be specific about what action is required and by when. Max 150 words.\n\n${contextText}`,
-      }],
-    })
-
-    claudeSummary = msg.content[0].type === 'text' ? msg.content[0].text : ''
+      const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${groqKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'llama-3.3-70b-versatile',
+          max_tokens: 300,
+          messages: [{
+            role: 'user',
+            content: `Summarize this Kenyan Ministry of Education document for a school principal. Be specific about what action is required and by when. Max 150 words.\n\n${contextText}`,
+          }],
+        }),
+      })
+      if (groqRes.ok) {
+        const groqData = await groqRes.json() as { choices?: { message: { content: string } }[] }
+        claudeSummary = groqData.choices?.[0]?.message?.content ?? ''
+      }
+    }
   } catch (e) {
-    console.error('[document-inbox] Claude error:', e)
+    console.error('[document-inbox] AI summary error:', e)
   }
 
   // ── Persist to ministry_circulars table ───────────────────────────────────

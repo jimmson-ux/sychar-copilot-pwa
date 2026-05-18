@@ -7,25 +7,26 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/requireAuth'
 import { createAdminSupabaseClient } from '@/lib/supabase-server'
 import { generateText } from 'ai'
-import { anthropic } from '@ai-sdk/anthropic'
 import { google } from '@ai-sdk/google'
 
 const ALLOWED = new Set(['accountant', 'principal', 'deputy_principal'])
 
 async function callAI(prompt: string): Promise<string> {
+  const groqKey = process.env.GROQ_API_KEY
   try {
-    const { text } = await generateText({
-      model: anthropic('claude-sonnet-4-6'),
-      prompt,
-      maxOutputTokens: 800,
+    if (!groqKey) throw new Error('no key')
+    const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${groqKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: 'llama-3.3-70b-versatile', max_tokens: 800, messages: [{ role: 'user', content: prompt }] }),
     })
+    if (!groqRes.ok) throw new Error('Groq error')
+    const groqData = await groqRes.json() as { choices?: { message: { content: string } }[] }
+    const text = groqData.choices?.[0]?.message?.content ?? ''
+    if (!text) throw new Error('empty')
     return text
   } catch {
-    const { text } = await generateText({
-      model: google('gemini-2.0-flash'),
-      prompt,
-      maxOutputTokens: 800,
-    })
+    const { text } = await generateText({ model: google('gemini-2.0-flash'), prompt, maxOutputTokens: 800 })
     return text
   }
 }

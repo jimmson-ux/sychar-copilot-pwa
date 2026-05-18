@@ -17,9 +17,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Principal only' }, { status: 403 })
   }
 
-  const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY
-  if (!ANTHROPIC_API_KEY) {
-    return NextResponse.json({ error: 'Anthropic API key not configured' }, { status: 503 })
+  const GROQ_API_KEY = process.env.GROQ_API_KEY
+  if (!GROQ_API_KEY) {
+    return NextResponse.json({ error: 'AI service not configured' }, { status: 503 })
   }
 
   const body = await req.json().catch(() => ({})) as {
@@ -208,25 +208,23 @@ Format the report in professional Kenyan school English with these sections:
 
 Use formal tone appropriate for a Board of Management presentation. No markdown, plain paragraphs under each heading.`
 
-  const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
+  const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
-    headers: {
-      'x-api-key': ANTHROPIC_API_KEY,
-      'anthropic-version': '2023-06-01',
-      'content-type': 'application/json',
-    },
+    headers: { Authorization: `Bearer ${GROQ_API_KEY}`, 'content-type': 'application/json' },
     body: JSON.stringify({
-      model:      'claude-haiku-4-5-20251001',
+      model:      'llama-3.1-8b-instant',
       max_tokens: 1200,
-      system:     'You are an expert Kenyan school management consultant writing formal Board of Management reports.',
-      messages:   [{ role: 'user', content: prompt }],
+      messages: [
+        { role: 'system', content: 'You are an expert Kenyan school management consultant writing formal Board of Management reports.' },
+        { role: 'user', content: prompt },
+      ],
     }),
   })
 
-  const claudeData = claudeRes.ok
-    ? await claudeRes.json() as { content?: Array<{ text: string }> }
-    : { content: [] }
-  const narrative = claudeData.content?.[0]?.text ?? 'Report generation failed.'
+  const groqData = groqRes.ok
+    ? await groqRes.json() as { choices?: { message: { content: string } }[] }
+    : { choices: [] }
+  const narrative = groqData.choices?.[0]?.message?.content ?? 'Report generation failed.'
 
   const reportPayload = {
     school_id:    sid,

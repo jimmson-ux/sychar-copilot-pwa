@@ -5,7 +5,6 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/requireAuth'
 import { createAdminSupabaseClient } from '@/lib/supabase-server'
-import Anthropic from '@anthropic-ai/sdk'
 
 const ALLOWED = new Set([
   'principal','deputy_principal','deputy_principal_academic','dean_of_studies',
@@ -21,7 +20,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Forbidden — subject teacher or above required' }, { status: 403 })
   }
 
-  const anthropicKey = process.env.ANTHROPIC_API_KEY
+  const anthropicKey = process.env.GROQ_API_KEY
   if (!anthropicKey) return NextResponse.json({ error: 'AI not configured' }, { status: 500 })
 
   const body = await req.json().catch(() => ({})) as {
@@ -145,16 +144,21 @@ Return ONLY valid JSON:
   "teacher_tips": ["tip1", "tip2", "tip3"]
 }`
 
-  const client = new Anthropic({ apiKey: anthropicKey })
   let aiResult: Record<string, unknown>
 
   try {
-    const response = await client.messages.create({
-      model:      'claude-haiku-4-5-20251001',
-      max_tokens: 2000,
-      messages:   [{ role: 'user', content: prompt }],
+    const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${anthropicKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'llama-3.1-8b-instant',
+        max_tokens: 2000,
+        messages: [{ role: 'user', content: prompt }],
+      }),
     })
-    const raw   = (response.content[0] as { text: string }).text ?? ''
+    if (!groqRes.ok) throw new Error(`Groq error ${groqRes.status}`)
+    const groqData = await groqRes.json() as { choices?: { message: { content: string } }[] }
+    const raw   = groqData.choices?.[0]?.message?.content ?? ''
     const match = raw.match(/\{[\s\S]*\}/)
     aiResult    = match ? JSON.parse(match[0]) : { groups: [], overall_strategy: raw, teacher_tips: [] }
   } catch {

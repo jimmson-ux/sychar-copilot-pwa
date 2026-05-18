@@ -163,9 +163,9 @@ export async function POST(req: Request) {
   if (auth.unauthorized) return auth.unauthorized
 
   const sb = getSb()
-  const anthropicKey = process.env.ANTHROPIC_API_KEY
+  const anthropicKey = process.env.GROQ_API_KEY
   if (!anthropicKey) {
-    console.error('[university-matching] ANTHROPIC_API_KEY not set')
+    console.error('[university-matching] GROQ_API_KEY not set')
     return NextResponse.json({ error: 'Server misconfigured' }, { status: 500 })
   }
 
@@ -195,16 +195,15 @@ export async function POST(req: Request) {
       .limit(1)
       .maybeSingle()
 
-    // 3. Call Claude
-    const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
+    // 3. Call Groq
+    const aiRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': anthropicKey,
-        'anthropic-version': '2023-06-01',
+        Authorization: `Bearer ${anthropicKey}`,
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
+        model: 'llama-3.3-70b-versatile',
         max_tokens: 4096,
         messages: [{ role: 'user', content: buildPrompt(student as StudentRow, prediction as PredictionRow | null) }],
       }),
@@ -212,12 +211,12 @@ export async function POST(req: Request) {
 
     if (!aiRes.ok) {
       const errBody = await aiRes.text()
-      console.error('[university-matching] Claude error:', aiRes.status, errBody.slice(0, 200))
+      console.error('[university-matching] Groq error:', aiRes.status, errBody.slice(0, 200))
       throw new Error('AI service unavailable')
     }
 
-    const aiData = await aiRes.json() as { content: { text: string }[] }
-    const rawText = aiData.content?.[0]?.text ?? ''
+    const aiData = await aiRes.json() as { choices?: { message: { content: string } }[] }
+    const rawText = aiData.choices?.[0]?.message?.content ?? ''
     const jsonStr = rawText.replace(/^```json\s*/i, '').replace(/\s*```$/i, '').trim()
 
     let parsed: UniversityMatchResult

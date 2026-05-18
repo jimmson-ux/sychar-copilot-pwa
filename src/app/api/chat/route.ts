@@ -19,9 +19,9 @@ interface Message {
 }
 
 export async function POST(request: Request) {
-  const anthropicKey = process.env.ANTHROPIC_API_KEY
+  const anthropicKey = process.env.GROQ_API_KEY
   if (!anthropicKey) {
-    console.error('[chat] ANTHROPIC_API_KEY not set')
+    console.error('[chat] GROQ_API_KEY not set')
     return NextResponse.json({ error: 'Server misconfigured' }, { status: 500 })
   }
 
@@ -61,32 +61,33 @@ export async function POST(request: Request) {
 
   let res: Response
   try {
-    res = await fetch('https://api.anthropic.com/v1/messages', {
+    res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': anthropicKey,
-        'anthropic-version': '2023-06-01',
+        Authorization: `Bearer ${anthropicKey}`,
       },
       body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
+        model: 'llama-3.1-8b-instant',
         max_tokens: 1024,
-        system: SYSTEM_PROMPT + contextNote,
-        messages: safeMessages,
+        messages: [
+          { role: 'system', content: SYSTEM_PROMPT + contextNote },
+          ...safeMessages,
+        ],
       }),
     })
   } catch {
-    console.error('[chat] Anthropic fetch failed')
+    console.error('[chat] Groq fetch failed')
     return NextResponse.json({ error: 'AI service unavailable' }, { status: 502 })
   }
 
   if (!res.ok) {
-    console.error('[chat] Anthropic error:', res.status)
+    console.error('[chat] Groq error:', res.status)
     return NextResponse.json({ error: 'AI service unavailable' }, { status: 502 })
   }
 
-  const data = await res.json() as { content?: Array<{ text?: string }> }
-  const text: string = data.content?.[0]?.text ?? ''
+  const data = await res.json() as { choices?: { message: { content: string } }[] }
+  const text: string = data.choices?.[0]?.message?.content ?? ''
 
   return NextResponse.json({ reply: text })
 }

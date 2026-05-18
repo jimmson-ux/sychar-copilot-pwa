@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/requireAuth'
 import { createAdminSupabaseClient } from '@/lib/supabase-server'
 import { generateObject } from 'ai'
-import { anthropic } from '@ai-sdk/anthropic'
 import { google } from '@ai-sdk/google'
 import { z } from 'zod'
 
@@ -255,17 +254,28 @@ export async function POST(req: NextRequest) {
     teacher_ids,
   )
 
-  // ── AI generation: Claude → Gemini fallback ────────────────────
+  // ── AI generation: Groq → Gemini fallback ─────────────────────
   let result: z.infer<typeof DutyRosterSchema>
 
+  const groqKey = process.env.GROQ_API_KEY
   try {
-    const { object } = await generateObject({
-      model:     anthropic('claude-opus-4.7'),
-      prompt,
-      schema:    DutyRosterSchema,
-      maxTokens: 4000,
+    if (!groqKey) throw new Error('no key')
+    const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${groqKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'llama-3.3-70b-versatile',
+        max_tokens: 4000,
+        response_format: { type: 'json_object' },
+        messages: [{ role: 'user', content: prompt }],
+      }),
     })
-    result = object as z.infer<typeof DutyRosterSchema>
+    if (!groqRes.ok) throw new Error(`Groq ${groqRes.status}`)
+    const groqData = await groqRes.json() as { choices?: { message: { content: string } }[] }
+    const raw = groqData.choices?.[0]?.message?.content ?? '{}'
+    const validated = DutyRosterSchema.safeParse(JSON.parse(raw))
+    if (!validated.success) throw new Error('schema mismatch')
+    result = validated.data
   } catch {
     try {
       const { object } = await generateObject({

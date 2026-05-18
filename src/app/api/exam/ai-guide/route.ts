@@ -41,9 +41,9 @@ export async function POST(request: Request) {
   const info = await validateTeacherToken(token)
   if (!info) return NextResponse.json({ error: 'Invalid token' }, { status: 403 })
 
-  const anthropicKey = process.env.ANTHROPIC_API_KEY
+  const anthropicKey = process.env.GROQ_API_KEY
   if (!anthropicKey) {
-    console.error('[exam/ai-guide] ANTHROPIC_API_KEY not set')
+    console.error('[exam/ai-guide] GROQ_API_KEY not set')
     return NextResponse.json({ error: 'AI service not configured' }, { status: 500 })
   }
 
@@ -99,27 +99,26 @@ Generate a practical AI Teaching Guide. Return ONLY valid JSON (no markdown):
 
   let guide: Record<string, unknown>
   try {
-    const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
+    const aiRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': anthropicKey,
-        'anthropic-version': '2023-06-01',
+        Authorization: `Bearer ${anthropicKey}`,
       },
       body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
+        model: 'llama-3.1-8b-instant',
         max_tokens: 2048,
         messages: [{ role: 'user', content: prompt }],
       }),
     })
 
     if (!aiRes.ok) {
-      console.error('[exam/ai-guide] Claude error:', aiRes.status)
+      console.error('[exam/ai-guide] Groq error:', aiRes.status)
       return NextResponse.json({ error: 'AI service unavailable' }, { status: 502 })
     }
 
-    const aiData = await aiRes.json() as { content: { text: string }[] }
-    const raw = aiData.content?.[0]?.text ?? '{}'
+    const aiData = await aiRes.json() as { choices?: { message: { content: string } }[] }
+    const raw = aiData.choices?.[0]?.message?.content ?? '{}'
     const clean = raw.replace(/^```json\s*/i, '').replace(/\s*```$/i, '').trim()
     guide = JSON.parse(clean)
   } catch {

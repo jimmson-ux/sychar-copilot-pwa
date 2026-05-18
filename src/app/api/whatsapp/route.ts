@@ -5,7 +5,6 @@ export const dynamic = 'force-dynamic'
 
 import { NextResponse } from 'next/server'
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
-import Anthropic from '@anthropic-ai/sdk'
 import { rateLimit, LIMITS } from '@/lib/rateLimit'
 
 const SCHOOL_ID  = process.env.NEXT_PUBLIC_SCHOOL_ID!
@@ -85,13 +84,17 @@ type Intent =
 
 async function detectIntent(message: string): Promise<Intent> {
   try {
-    const client = new Anthropic()
-    const res = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 50,
-      messages: [{
-        role: 'user',
-        content: `Classify this WhatsApp message into exactly ONE of these intents:
+    const groqKey = process.env.GROQ_API_KEY
+    if (!groqKey) return 'unknown'
+    const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${groqKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'llama-3.1-8b-instant',
+        max_tokens: 50,
+        messages: [{
+          role: 'user',
+          content: `Classify this WhatsApp message into exactly ONE of these intents:
 greeting, fee_query, results_query, attendance_query, kcse_query, duty_query, send_my_link, principal_broadcast, unknown
 
 Rules:
@@ -108,9 +111,12 @@ Rules:
 Message: "${message.replace(/"/g, "'").slice(0, 300)}"
 
 Reply with ONLY the intent word, nothing else.`,
-      }],
+        }],
+      }),
     })
-    const text = (res.content[0] as { type: string; text: string }).text?.trim().toLowerCase() as Intent
+    if (!groqRes.ok) return 'unknown'
+    const groqData = await groqRes.json() as { choices?: { message: { content: string } }[] }
+    const text = (groqData.choices?.[0]?.message?.content ?? '').trim().toLowerCase() as Intent
     const valid: Intent[] = ['greeting','fee_query','results_query','attendance_query','kcse_query','duty_query','send_my_link','principal_broadcast','unknown']
     return valid.includes(text) ? text : 'unknown'
   } catch {

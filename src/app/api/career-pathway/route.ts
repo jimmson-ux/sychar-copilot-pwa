@@ -20,9 +20,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'student_id required' }, { status: 400 })
   }
 
-  const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY
-  if (!ANTHROPIC_API_KEY) {
-    return NextResponse.json({ error: 'Anthropic API key not configured' }, { status: 503 })
+  const GROQ_API_KEY = process.env.GROQ_API_KEY
+  if (!GROQ_API_KEY) {
+    return NextResponse.json({ error: 'AI service not configured' }, { status: 503 })
   }
 
   const db = svc()
@@ -124,25 +124,23 @@ Points gap to top course: ${gap} cluster points
 Be encouraging but realistic. Mention their strongest subjects, top course match, and one clear improvement action.
 Write in second person ("Your performance..."). Plain text only, no headers.`
 
-  const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
+  const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
-    headers: {
-      'x-api-key': ANTHROPIC_API_KEY,
-      'anthropic-version': '2023-06-01',
-      'content-type': 'application/json',
-    },
+    headers: { Authorization: `Bearer ${GROQ_API_KEY}`, 'content-type': 'application/json' },
     body: JSON.stringify({
-      model: 'claude-haiku-4-5-20251001',
+      model: 'llama-3.1-8b-instant',
       max_tokens: 300,
-      system: 'You are a Kenyan school career guidance counsellor. Write encouraging, realistic advice.',
-      messages: [{ role: 'user', content: prompt }],
+      messages: [
+        { role: 'system', content: 'You are a Kenyan school career guidance counsellor. Write encouraging, realistic advice.' },
+        { role: 'user', content: prompt },
+      ],
     }),
   })
 
-  const claudeData = claudeRes.ok
-    ? await claudeRes.json() as { content?: Array<{ text: string }> }
-    : { content: [] }
-  const narrative = claudeData.content?.[0]?.text ?? 'Career pathway analysis not available.'
+  const groqData = groqRes.ok
+    ? await groqRes.json() as { choices?: { message: { content: string } }[] }
+    : { choices: [] }
+  const narrative = groqData.choices?.[0]?.message?.content ?? 'Career pathway analysis not available.'
 
   const report = {
     student_id:    studentId,

@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/requireAuth'
 import { createAdminSupabaseClient } from '@/lib/supabase-server'
 import { generateObject } from 'ai'
-import { anthropic } from '@ai-sdk/anthropic'
 import { google } from '@ai-sdk/google'
 import { z } from 'zod'
 
@@ -255,17 +254,28 @@ export async function POST(req: NextRequest) {
     (appraisalRows ?? []) as AppraisalScore[],
   )
 
-  // ── AI generation: Claude Opus → Gemini fallback ───────────────
+  // ── AI generation: Groq → Gemini fallback ────────────────────
   let result: z.infer<typeof TimetableSchema>
 
+  const groqKey = process.env.GROQ_API_KEY
   try {
-    const { object } = await generateObject({
-      model:     anthropic('claude-opus-4.7'),
-      prompt,
-      schema:    TimetableSchema,
-      maxTokens: 8000,
+    if (!groqKey) throw new Error('no key')
+    const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${groqKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'llama-3.3-70b-versatile',
+        max_tokens: 8000,
+        response_format: { type: 'json_object' },
+        messages: [{ role: 'user', content: prompt }],
+      }),
     })
-    result = object as z.infer<typeof TimetableSchema>
+    if (!groqRes.ok) throw new Error(`Groq ${groqRes.status}`)
+    const groqData = await groqRes.json() as { choices?: { message: { content: string } }[] }
+    const raw = groqData.choices?.[0]?.message?.content ?? '{}'
+    const validated = TimetableSchema.safeParse(JSON.parse(raw))
+    if (!validated.success) throw new Error('schema mismatch')
+    result = validated.data
   } catch {
     try {
       const { object } = await generateObject({

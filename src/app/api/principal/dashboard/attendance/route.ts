@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/requireAuth'
 import { createAdminSupabaseClient } from '@/lib/supabase-server'
 import { streamText, generateText } from 'ai'
-import { anthropic } from '@ai-sdk/anthropic'
 import { google } from '@ai-sdk/google'
 
 export const dynamic = 'force-dynamic'
@@ -114,48 +113,37 @@ export async function GET(req: NextRequest) {
   const wantStream = req.nextUrl.searchParams.get('stream') === 'true'
 
   if (wantStream) {
-    // Streaming AI briefing via Claude → Gemini fallback
-    try {
-      const result = streamText({
-        model:           anthropic('claude-opus-4.7'),
-        prompt:          buildPrompt(data),
-        maxOutputTokens: 200,
-      })
-      return result.toTextStreamResponse({
-        headers: {
-          'X-School':  data.school_name,
-          'X-Date':    data.date,
-          'X-Present': String(data.stats.present),
-          'X-Total':   String(data.stats.total),
-        },
-      })
-    } catch {
-      // Fallback: Gemini Flash
-      const result = streamText({
-        model:           google('gemini-2.0-flash'),
-        prompt:          buildPrompt(data),
-        maxOutputTokens: 200,
-      })
-      return result.toTextStreamResponse()
-    }
+    const result = streamText({
+      model:           google('gemini-2.0-flash'),
+      prompt:          buildPrompt(data),
+      maxOutputTokens: 200,
+    })
+    return result.toTextStreamResponse({
+      headers: {
+        'X-School':  data.school_name,
+        'X-Date':    data.date,
+        'X-Present': String(data.stats.present),
+        'X-Total':   String(data.stats.total),
+      },
+    })
   }
 
   // Non-streaming: return JSON + AI summary
   let ai_briefing: string | null = null
+  const groqKey = process.env.GROQ_API_KEY
   try {
-    const { text } = await generateText({
-      model:           anthropic('claude-haiku-4.5-20251001'),
-      prompt:          buildPrompt(data),
-      maxOutputTokens: 200,
+    if (!groqKey) throw new Error('no key')
+    const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${groqKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: 'llama-3.1-8b-instant', max_tokens: 200, messages: [{ role: 'user', content: buildPrompt(data) }] }),
     })
-    ai_briefing = text
+    if (!groqRes.ok) throw new Error('Groq error')
+    const groqData = await groqRes.json() as { choices?: { message: { content: string } }[] }
+    ai_briefing = groqData.choices?.[0]?.message?.content?.trim() ?? null
   } catch {
     try {
-      const { text } = await generateText({
-        model:           google('gemini-2.0-flash'),
-        prompt:          buildPrompt(data),
-        maxOutputTokens: 200,
-      })
+      const { text } = await generateText({ model: google('gemini-2.0-flash'), prompt: buildPrompt(data), maxOutputTokens: 200 })
       ai_briefing = text
     } catch {
       ai_briefing = null

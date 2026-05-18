@@ -10,7 +10,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/requireAuth'
 import { createAdminSupabaseClient } from '@/lib/supabase-server'
 import { generateText } from 'ai'
-import { anthropic } from '@ai-sdk/anthropic'
 import { google } from '@ai-sdk/google'
 
 const ALLOWED = new Set(['principal','deputy_principal','deputy_principal_admin','deputy_principal_discipline'])
@@ -90,21 +89,22 @@ Include: date, salutation, formal statement of suspension, reason, duration, con
 Format as plain text with proper paragraphs. No markdown. No placeholders in square brackets.`
 
   try {
-    // Primary: Claude Sonnet — fallback: Gemini Flash
+    // Primary: Groq — fallback: Gemini Flash
     let letterText: string
+    const groqKey = process.env.GROQ_API_KEY
     try {
-      const r = await generateText({
-        model: anthropic('claude-sonnet-4-6'),
-        prompt,
-        maxOutputTokens: 1000,
+      if (!groqKey) throw new Error('no key')
+      const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${groqKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: 'llama-3.3-70b-versatile', max_tokens: 1000, messages: [{ role: 'user', content: prompt }] }),
       })
-      letterText = r.text
+      if (!groqRes.ok) throw new Error('Groq error')
+      const groqData = await groqRes.json() as { choices?: { message: { content: string } }[] }
+      letterText = groqData.choices?.[0]?.message?.content?.trim() ?? ''
+      if (!letterText) throw new Error('empty')
     } catch {
-      const r = await generateText({
-        model: google('gemini-2.0-flash'),
-        prompt,
-        maxOutputTokens: 1000,
-      })
+      const r = await generateText({ model: google('gemini-2.0-flash'), prompt, maxOutputTokens: 1000 })
       letterText = r.text
     }
     const letterTextTrimmed = letterText.trim()

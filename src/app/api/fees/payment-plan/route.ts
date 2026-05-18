@@ -4,7 +4,6 @@
 export const dynamic = 'force-dynamic'
 
 import { createClient } from '@supabase/supabase-js'
-import Anthropic from '@anthropic-ai/sdk'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/requireAuth'
 import { rateLimit, LIMITS } from '@/lib/rateLimit'
@@ -126,15 +125,17 @@ export async function POST(req: Request) {
   let aiScore = 70
   let aiReasoning = 'Default viability score — AI service not configured'
 
-  if (process.env.ANTHROPIC_API_KEY) {
+  if (process.env.GROQ_API_KEY) {
     try {
-      const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
-      const msg = await client.messages.create({
-        model: 'claude-haiku-4-5',
-        max_tokens: 200,
-        messages: [{
-          role: 'user',
-          content: `Rate the viability of this school fee payment plan for a Kenyan secondary school.
+      const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${process.env.GROQ_API_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'llama-3.1-8b-instant',
+          max_tokens: 200,
+          messages: [{
+            role: 'user',
+            content: `Rate the viability of this school fee payment plan for a Kenyan secondary school.
 
 Total balance: KES ${totalBalance.toLocaleString()}
 Installments: ${numberOfInstallments} payments of ~KES ${installmentAmount.toLocaleString()} each
@@ -144,12 +145,16 @@ Return ONLY valid JSON:
 {"score": 0, "reasoning": "one sentence explanation"}
 
 score: 0-100 (100 = very viable, 0 = unrealistic)`,
-        }],
+          }],
+        }),
       })
-      const text = msg.content[0].type === 'text' ? msg.content[0].text : '{}'
-      const parsed = JSON.parse(text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim())
-      aiScore     = Math.max(0, Math.min(100, Number(parsed.score ?? 70)))
-      aiReasoning = parsed.reasoning ?? ''
+      if (groqRes.ok) {
+        const groqData = await groqRes.json() as { choices?: { message: { content: string } }[] }
+        const text = groqData.choices?.[0]?.message?.content ?? '{}'
+        const parsed = JSON.parse(text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim())
+        aiScore     = Math.max(0, Math.min(100, Number(parsed.score ?? 70)))
+        aiReasoning = parsed.reasoning ?? ''
+      }
     } catch (err) {
       console.error('[payment-plan] AI scoring error:', err)
     }

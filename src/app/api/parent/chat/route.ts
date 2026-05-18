@@ -9,8 +9,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireParentAuth } from '@/middleware/verifyParentJWT'
 import { createAdminSupabaseClient } from '@/lib/supabase-server'
 
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY!
-const MODEL = 'claude-haiku-4-5-20251001'
+const MODEL = 'llama-3.1-8b-instant'
 
 function detectLanguage(text: string): 'sw' | 'en' {
   const swahiliWords = /\b(habari|mtoto|shule|malipo|ada|damu|mwalimu|darasa|hesabu|jibu|tafadhali|asante|karibu|sawa)\b/i
@@ -125,18 +124,20 @@ Attendance (last 14 days): ${attendRate !== null ? `${attendRate}% present` : 'N
 Recent marks: ${marksSummary || 'No recent marks'}
 `.trim()
 
-  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+  const groqKey = process.env.GROQ_API_KEY
+  if (!groqKey) return NextResponse.json({ error: 'AI service unavailable' }, { status: 503 })
+
+  const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
     headers: {
-      'x-api-key':         ANTHROPIC_API_KEY,
-      'anthropic-version': '2023-06-01',
-      'content-type':      'application/json',
+      Authorization:  `Bearer ${groqKey}`,
+      'content-type': 'application/json',
     },
     body: JSON.stringify({
       model: MODEL,
       max_tokens: 400,
-      system: systemPrompt,
       messages: [
+        { role: 'system', content: systemPrompt },
         { role: 'user', content: `${contextBlock}\n\nParent asks: ${message}` },
       ],
     }),
@@ -146,8 +147,8 @@ Recent marks: ${marksSummary || 'No recent marks'}
     return NextResponse.json({ error: 'AI service unavailable' }, { status: 502 })
   }
 
-  const ai      = await resp.json() as { content?: Array<{ text?: string }> }
-  const reply   = (ai.content?.[0]?.text ?? '').trim()
+  const ai      = await resp.json() as { choices?: { message: { content: string } }[] }
+  const reply   = (ai.choices?.[0]?.message?.content ?? '').trim()
   const context = classifyContext(message)
   const sentiment = detectSentiment(message)
   const topics    = [context]

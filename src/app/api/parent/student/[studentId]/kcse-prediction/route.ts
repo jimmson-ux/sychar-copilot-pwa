@@ -7,8 +7,6 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireParentAuth } from '@/middleware/verifyParentJWT'
 import { createAdminSupabaseClient } from '@/lib/supabase-server'
-import { anthropic } from '@ai-sdk/anthropic'
-import { generateText } from 'ai'
 import { z } from 'zod'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -73,13 +71,23 @@ Predict their KCSE outcome. Return ONLY valid JSON, no markdown:
 }`
 
   try {
-    const { text } = await generateText({
-      model:       anthropic('claude-haiku-4.5'),
-      maxTokens:   700,
-      system:      'You are a Kenyan secondary school academic analyst. Return only valid JSON.',
-      messages:    [{ role: 'user', content: prompt }],
+    const groqKey = process.env.GROQ_API_KEY
+    if (!groqKey) return null
+    const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${groqKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'llama-3.1-8b-instant',
+        max_tokens: 700,
+        messages: [
+          { role: 'system', content: 'You are a Kenyan secondary school academic analyst. Return only valid JSON.' },
+          { role: 'user', content: prompt },
+        ],
+      }),
     })
-
+    if (!groqRes.ok) return null
+    const groqData = await groqRes.json() as { choices?: { message: { content: string } }[] }
+    const text = groqData.choices?.[0]?.message?.content ?? ''
     const jsonMatch = text.match(/\{[\s\S]*\}/)
     if (!jsonMatch) return null
     return JSON.parse(jsonMatch[0]) as KcsePrediction

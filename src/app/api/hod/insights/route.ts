@@ -69,9 +69,9 @@ export async function POST(req: Request) {
   const auth = await requireAuth()
   if (auth.unauthorized) return auth.unauthorized
 
-  const anthropicKey = process.env.ANTHROPIC_API_KEY
+  const anthropicKey = process.env.GROQ_API_KEY
   if (!anthropicKey) {
-    console.error('[hod/insights] ANTHROPIC_API_KEY not set')
+    console.error('[hod/insights] GROQ_API_KEY not set')
     return NextResponse.json({ error: 'Server misconfigured' }, { status: 500 })
   }
 
@@ -165,15 +165,14 @@ Return ONLY valid JSON:
   ]
 }`
 
-    const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
+    const aiRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': anthropicKey,
-        'anthropic-version': '2023-06-01',
+        Authorization: `Bearer ${anthropicKey}`,
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
+        model: 'llama-3.3-70b-versatile',
         max_tokens: 2048,
         messages: [{ role: 'user', content: prompt }],
       }),
@@ -181,12 +180,12 @@ Return ONLY valid JSON:
 
     if (!aiRes.ok) {
       const body = await aiRes.text()
-      console.error('[hod/insights] Claude error:', aiRes.status, body.slice(0, 200))
+      console.error('[hod/insights] Groq error:', aiRes.status, body.slice(0, 200))
       return NextResponse.json({ error: 'AI service unavailable' }, { status: 502 })
     }
 
-    const aiData = await aiRes.json() as { content?: Array<{ text?: string }> }
-    const rawText: string = aiData.content?.[0]?.text ?? ''
+    const aiData = await aiRes.json() as { choices?: { message: { content: string } }[] }
+    const rawText: string = aiData.choices?.[0]?.message?.content ?? ''
     const jsonStr = rawText.replace(/^```json\s*/i, '').replace(/\s*```$/i, '').trim()
 
     let parsed: { insights: RawInsight[] }

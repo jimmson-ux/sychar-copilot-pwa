@@ -10,7 +10,6 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import Groq from 'groq-sdk'
 import { generateText } from 'ai'
-import { anthropic } from '@ai-sdk/anthropic'
 import { google } from '@ai-sdk/google'
 import { requireParentAuth } from '@/middleware/verifyParentJWT'
 import { createAdminSupabaseClient } from '@/lib/supabase-server'
@@ -84,18 +83,6 @@ async function callDirectFallback(
       fn: async () => {
         const { text } = await generateText({
           model: google('gemini-2.0-flash'),
-          system: systemPrompt,
-          messages,
-          maxOutputTokens: 300,
-        })
-        return text
-      },
-    },
-    {
-      name: 'claude',
-      fn: async () => {
-        const { text } = await generateText({
-          model: anthropic('claude-haiku-4-5-20251001'),
           system: systemPrompt,
           messages,
           maxOutputTokens: 300,
@@ -316,25 +303,13 @@ async function extractDetailsWithFallback(
   ].join('\n')
 
   try {
-    // Try Gemini first, fall back to Claude Haiku for JSON extraction
-    let text: string
-    try {
-      const r = await generateText({
-        model:           google('gemini-2.0-flash'),
-        system:          'You are a JSON extraction assistant. Return only valid JSON.',
-        prompt:          buildExtractionPrompt(conversation),
-        maxOutputTokens: 150,
-      })
-      text = r.text
-    } catch {
-      const r = await generateText({
-        model:           anthropic('claude-haiku-4-5-20251001'),
-        system:          'You are a JSON extraction assistant. Return only valid JSON.',
-        prompt:          buildExtractionPrompt(conversation),
-        maxOutputTokens: 150,
-      })
-      text = r.text
-    }
+    const r = await generateText({
+      model:           google('gemini-2.0-flash'),
+      system:          'You are a JSON extraction assistant. Return only valid JSON.',
+      prompt:          buildExtractionPrompt(conversation),
+      maxOutputTokens: 150,
+    })
+    const text = r.text
     const json = text.match(/\{[\s\S]*\}/)?.[0]
     if (!json) return null
     const parsed = JSON.parse(json) as { student_name?: string | null; admission_number?: string | null }

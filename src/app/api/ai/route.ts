@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import Anthropic from '@anthropic-ai/sdk'
 import { requireAuth } from '@/lib/requireAuth'
 
-// TODO: Replace with full school context prompt when provided
 const SYSTEM_PROMPT = `You are an intelligent school management AI assistant for a Kenyan secondary school. Be concise, practical, and grounded in the Kenyan education context (KCSE, CBC, KNEC guidelines).`
 
 export async function POST(req: NextRequest) {
+  const groqKey = process.env.GROQ_API_KEY
+  if (!groqKey) return NextResponse.json({ error: 'AI service not configured' }, { status: 503 })
+
   const auth = await requireAuth()
   if (auth.unauthorized) return auth.unauthorized
 
@@ -22,18 +23,22 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const client = new Anthropic()
-    const response = await client.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: maxTokens,
-      system: SYSTEM_PROMPT,
-      messages: messages.map(m => ({
-        role: m.role as 'user' | 'assistant',
-        content: m.content,
-      })),
+    const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${groqKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'llama-3.3-70b-versatile',
+        max_tokens: maxTokens,
+        messages: [
+          { role: 'system', content: SYSTEM_PROMPT },
+          ...messages.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content })),
+        ],
+      }),
     })
 
-    const content = response.content[0]?.type === 'text' ? response.content[0].text : ''
+    if (!groqRes.ok) return NextResponse.json({ error: 'AI request failed' }, { status: 502 })
+    const groqData = await groqRes.json() as { choices?: { message: { content: string } }[] }
+    const content = groqData.choices?.[0]?.message?.content ?? ''
     return NextResponse.json({ content })
   } catch (err) {
     console.error('[api/ai] error:', err)

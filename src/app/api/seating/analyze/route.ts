@@ -8,7 +8,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/requireAuth'
 import { createAdminSupabaseClient } from '@/lib/supabase-server'
 import { updatePrincipalSeatingSummary } from '@/lib/seating-summary'
-import Anthropic from '@anthropic-ai/sdk'
 
 const ALLOWED = new Set([
   'principal','deputy_principal','deputy_principal_admin',
@@ -24,7 +23,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Forbidden — class teacher or leadership required' }, { status: 403 })
   }
 
-  const apiKey = process.env.ANTHROPIC_API_KEY
+  const apiKey = process.env.GROQ_API_KEY
   if (!apiKey) return NextResponse.json({ error: 'AI not configured' }, { status: 500 })
 
   const body = await req.json().catch(() => ({})) as {
@@ -217,21 +216,26 @@ RULES:
 - If no issues found, say so clearly in the summary
 - Limit recommended_moves to maximum 5 (most impactful only)`
 
-  const client = new Anthropic({ apiKey })
   let analysis: Record<string, unknown>
 
   try {
-    const response = await client.messages.create({
-      model:      'claude-sonnet-4-6',
-      max_tokens: 2000,
-      messages:   [{ role: 'user', content: prompt }],
+    const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'llama-3.3-70b-versatile',
+        max_tokens: 2000,
+        messages: [{ role: 'user', content: prompt }],
+      }),
     })
-    const raw = (response.content[0] as { text: string }).text ?? ''
+    if (!groqRes.ok) throw new Error(`Groq error ${groqRes.status}`)
+    const groqData = await groqRes.json() as { choices?: { message: { content: string } }[] }
+    const raw = groqData.choices?.[0]?.message?.content ?? ''
     const match = raw.match(/\{[\s\S]*\}/)
     if (!match) throw new Error('No JSON in response')
     analysis = JSON.parse(match[0])
   } catch (e) {
-    console.error('[seating/analyze] Claude error:', e)
+    console.error('[seating/analyze] AI error:', e)
     return NextResponse.json({ error: 'AI analysis failed' }, { status: 502 })
   }
 

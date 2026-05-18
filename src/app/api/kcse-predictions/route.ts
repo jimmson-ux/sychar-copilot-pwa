@@ -55,24 +55,25 @@ Return ONLY valid JSON (no markdown, no explanation):
   "recommendations": ["<1 actionable improvement per weak subject>"]
 }`
 
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
+  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
     headers: {
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
+      Authorization: `Bearer ${apiKey}`,
       'content-type': 'application/json',
     },
     body: JSON.stringify({
-      model: 'claude-haiku-4-5-20251001',
+      model: 'llama-3.1-8b-instant',
       max_tokens: 600,
-      system: 'You are a Kenyan secondary school academic analyst. Return only valid JSON.',
-      messages: [{ role: 'user', content: prompt }],
+      messages: [
+        { role: 'system', content: 'You are a Kenyan secondary school academic analyst. Return only valid JSON.' },
+        { role: 'user', content: prompt },
+      ],
     }),
   })
 
   if (!res.ok) return null
-  const data = await res.json() as { content?: Array<{ text: string }> }
-  const text = data.content?.[0]?.text ?? ''
+  const data = await res.json() as { choices?: { message: { content: string } }[] }
+  const text = data.choices?.[0]?.message?.content ?? ''
 
   try {
     const jsonMatch = text.match(/\{[\s\S]*\}/)
@@ -122,9 +123,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'classId required' }, { status: 400 })
   }
 
-  const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY
+  const ANTHROPIC_API_KEY = process.env.GROQ_API_KEY
   if (!ANTHROPIC_API_KEY) {
-    return NextResponse.json({ error: 'Anthropic API key not configured' }, { status: 503 })
+    return NextResponse.json({ error: 'AI service not configured' }, { status: 503 })
   }
 
   const db = svc()

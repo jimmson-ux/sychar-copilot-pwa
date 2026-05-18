@@ -6,7 +6,6 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/requireAuth'
 import { createAdminSupabaseClient } from '@/lib/supabase-server'
-import Anthropic from '@anthropic-ai/sdk'
 
 export async function POST(
   req: NextRequest,
@@ -15,7 +14,7 @@ export async function POST(
   const auth = await requireAuth()
   if (auth.unauthorized) return auth.unauthorized
 
-  const anthropicKey = process.env.ANTHROPIC_API_KEY
+  const anthropicKey = process.env.GROQ_API_KEY
   if (!anthropicKey) return NextResponse.json({ error: 'AI not configured' }, { status: 500 })
 
   const { id } = await params
@@ -68,16 +67,20 @@ Write a complete, structured lesson plan with these sections:
 Keep it practical for a Kenyan classroom context. Be specific about resources and activities.
 Format with clear headers. Total length: 350-500 words.`
 
-  const client = new Anthropic({ apiKey: anthropicKey })
-
   let aiText = ''
   try {
-    const response = await client.messages.create({
-      model:      'claude-haiku-4-5-20251001',
-      max_tokens: 1024,
-      messages:   [{ role: 'user', content: prompt }],
+    const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${anthropicKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'llama-3.1-8b-instant',
+        max_tokens: 1024,
+        messages: [{ role: 'user', content: prompt }],
+      }),
     })
-    aiText = (response.content[0] as { text: string }).text ?? ''
+    if (!groqRes.ok) throw new Error(`Groq error ${groqRes.status}`)
+    const groqData = await groqRes.json() as { choices?: { message: { content: string } }[] }
+    aiText = groqData.choices?.[0]?.message?.content ?? ''
   } catch {
     return NextResponse.json({ error: 'AI generation failed' }, { status: 502 })
   }

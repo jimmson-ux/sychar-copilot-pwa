@@ -4,7 +4,6 @@
 
 export const dynamic = 'force-dynamic'
 
-import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/requireAuth'
@@ -102,16 +101,20 @@ export async function POST(req: NextRequest) {
     `Stated reason for suspension: ${body.reason}`,
   ].filter(Boolean).join('\n')
 
-  // Draft letter via Claude
+  // Draft letter via Groq
   let draftLetter = ''
   try {
-    const anthropic = new Anthropic()
-    const response  = await anthropic.messages.create({
-      model:      'claude-sonnet-4-6',
-      max_tokens: 1000,
-      messages: [{
-        role:    'user',
-        content: `Draft a formal suspension letter for a Kenyan secondary school.
+    const groqKey = process.env.GROQ_API_KEY
+    if (!groqKey) throw new Error('GROQ_API_KEY missing')
+    const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${groqKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'llama-3.3-70b-versatile',
+        max_tokens: 1000,
+        messages: [{
+          role: 'user',
+          content: `Draft a formal suspension letter for a Kenyan secondary school.
 Student: ${s.full_name}, Class: ${s.class_name ?? 'Unknown'}.
 Reason: ${body.reason}.
 Evidence summary:
@@ -120,12 +123,17 @@ ${evidenceSummary}
 Format: official letter with school header placeholder, date, student details, grounds for suspension, right to be heard statement per Basic Education Act 2013 Section 38, suspension period (use [START DATE] and [END DATE]), readmission conditions, BOM appeal process.
 Tone: firm but fair.
 Output only the letter body — no preamble.`,
-      }],
+        }],
+      }),
     })
-    const block = response.content[0]
-    draftLetter = block.type === 'text' ? block.text : ''
+    if (groqRes.ok) {
+      const groqData = await groqRes.json() as { choices?: { message: { content: string } }[] }
+      draftLetter = groqData.choices?.[0]?.message?.content ?? ''
+    } else {
+      draftLetter = `[AI draft unavailable — write manually]\n\nReason: ${body.reason}`
+    }
   } catch (e) {
-    console.error('[suspension/build-case] Claude error:', e)
+    console.error('[suspension/build-case] AI error:', e)
     draftLetter = `[AI draft unavailable — write manually]\n\nReason: ${body.reason}`
   }
 

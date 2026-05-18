@@ -5,7 +5,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/requireAuth'
-import Anthropic from '@anthropic-ai/sdk'
 
 function serviceClient() {
   return createClient(
@@ -90,15 +89,22 @@ Respond with a JSON object:
   "summary": "one paragraph overview of the distribution plan"
 }`
 
-  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+  const groqKey = process.env.GROQ_API_KEY
+  if (!groqKey) return NextResponse.json({ error: 'AI not configured' }, { status: 503 })
 
-  const message = await anthropic.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 1024,
-    messages: [{ role: 'user', content: prompt }],
+  const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${groqKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'llama-3.3-70b-versatile',
+      max_tokens: 1024,
+      messages: [{ role: 'user', content: prompt }],
+    }),
   })
 
-  const rawText = message.content[0].type === 'text' ? message.content[0].text : ''
+  if (!groqRes.ok) return NextResponse.json({ error: 'AI service unavailable' }, { status: 502 })
+  const groqData = await groqRes.json() as { choices?: { message: { content: string } }[] }
+  const rawText = groqData.choices?.[0]?.message?.content ?? ''
 
   let parsed: Record<string, unknown>
   try {

@@ -24,24 +24,22 @@ async function generateCaption(
 Event: "${photo.eventName}" on ${photo.date}.
 Be positive, celebratory, and specific to the event. No hashtags.`
 
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
+  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
-    headers: {
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      'content-type': 'application/json',
-    },
+    headers: { Authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
     body: JSON.stringify({
-      model: 'claude-haiku-4-5-20251001',
+      model: 'llama-3.1-8b-instant',
       max_tokens: 60,
-      system: 'You write short, energetic captions for school event photos in Kenya. Return only the caption text.',
-      messages: [{ role: 'user', content: prompt }],
+      messages: [
+        { role: 'system', content: 'You write short, energetic captions for school event photos in Kenya. Return only the caption text.' },
+        { role: 'user', content: prompt },
+      ],
     }),
   })
 
   if (!res.ok) return `${photo.eventName} — A memorable moment.`
-  const data = await res.json() as { content?: Array<{ text: string }> }
-  return data.content?.[0]?.text?.trim() ?? `${photo.eventName} — A memorable moment.`
+  const data = await res.json() as { choices?: { message: { content: string } }[] }
+  return data.choices?.[0]?.message?.content?.trim() ?? `${photo.eventName} — A memorable moment.`
 }
 
 async function generateEditorial(
@@ -74,18 +72,16 @@ Return ONLY valid JSON:
 Key highlights this term: ${highlightsList || 'Academic achievement, sports competitions, school events'}
 Write in warm, school-community English appropriate for parents and students.`
 
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
+  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
-    headers: {
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      'content-type': 'application/json',
-    },
+    headers: { Authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
     body: JSON.stringify({
-      model: 'claude-haiku-4-5-20251001',
+      model: 'llama-3.1-8b-instant',
       max_tokens: 1000,
-      system: 'You write warm, celebratory school magazine content for Kenyan secondary schools. Return only valid JSON.',
-      messages: [{ role: 'user', content: prompt }],
+      messages: [
+        { role: 'system', content: 'You write warm, celebratory school magazine content for Kenyan secondary schools. Return only valid JSON.' },
+        { role: 'user', content: prompt },
+      ],
     }),
   })
 
@@ -98,8 +94,8 @@ Write in warm, school-community English appropriate for parents and students.`
 
   if (!res.ok) return fallback
 
-  const data = await res.json() as { content?: Array<{ text: string }> }
-  const text = data.content?.[0]?.text ?? ''
+  const data = await res.json() as { choices?: { message: { content: string } }[] }
+  const text = data.choices?.[0]?.message?.content ?? ''
 
   try {
     const jsonMatch = text.match(/\{[\s\S]*\}/)
@@ -117,9 +113,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Principal only' }, { status: 403 })
   }
 
-  const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY
-  if (!ANTHROPIC_API_KEY) {
-    return NextResponse.json({ error: 'Anthropic API key not configured' }, { status: 503 })
+  const GROQ_API_KEY = process.env.GROQ_API_KEY
+  if (!GROQ_API_KEY) {
+    return NextResponse.json({ error: 'AI service not configured' }, { status: 503 })
   }
 
   const body = await req.json().catch(() => ({})) as {
@@ -184,7 +180,7 @@ export async function POST(req: NextRequest) {
   for (let i = 0; i < photos.length; i += 5) {
     const batch = photos.slice(i, i + 5)
     const captions = await Promise.all(
-      batch.map(p => generateCaption(p, ANTHROPIC_API_KEY))
+      batch.map(p => generateCaption(p, GROQ_API_KEY))
     )
     for (let j = 0; j < batch.length; j++) {
       captionedPhotos.push({ ...batch[j], caption: captions[j] })
@@ -193,7 +189,7 @@ export async function POST(req: NextRequest) {
 
   // Generate all editorial sections
   const editorial = await generateEditorial(
-    schoolName, term, academicYear, highlights, topStudents, ANTHROPIC_API_KEY
+    schoolName, term, academicYear, highlights, topStudents, GROQ_API_KEY
   )
 
   // Group content by section
