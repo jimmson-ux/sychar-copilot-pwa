@@ -14,8 +14,8 @@ export async function POST(
   const auth = await requireAuth()
   if (auth.unauthorized) return auth.unauthorized
 
-  const anthropicKey = process.env.GROQ_API_KEY
-  if (!anthropicKey) return NextResponse.json({ error: 'AI not configured' }, { status: 500 })
+  const groqKey = process.env.GROQ_API_KEY
+  if (!groqKey) return NextResponse.json({ error: 'AI not configured' }, { status: 500 })
 
   const { id } = await params
   const body   = await req.json().catch(() => ({})) as {
@@ -71,7 +71,7 @@ Format with clear headers. Total length: 350-500 words.`
   try {
     const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
-      headers: { Authorization: `Bearer ${anthropicKey}`, 'Content-Type': 'application/json' },
+      headers: { Authorization: `Bearer ${groqKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: 'llama-3.1-8b-instant',
         max_tokens: 1024,

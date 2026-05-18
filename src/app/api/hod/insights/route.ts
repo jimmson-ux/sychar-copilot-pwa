@@ -69,8 +69,8 @@ export async function POST(req: Request) {
   const auth = await requireAuth()
   if (auth.unauthorized) return auth.unauthorized
 
-  const anthropicKey = process.env.GROQ_API_KEY
-  if (!anthropicKey) {
+  const groqKey = process.env.GROQ_API_KEY
+  if (!groqKey) {
     console.error('[hod/insights] GROQ_API_KEY not set')
     return NextResponse.json({ error: 'Server misconfigured' }, { status: 500 })
   }
@@ -169,7 +169,7 @@ Return ONLY valid JSON:
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${anthropicKey}`,
+        Authorization: `Bearer ${groqKey}`,
       },
       body: JSON.stringify({
         model: 'llama-3.3-70b-versatile',

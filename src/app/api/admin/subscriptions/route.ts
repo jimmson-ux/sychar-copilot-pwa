@@ -19,7 +19,8 @@ import { sendWhatsApp } from '@/lib/whatsapp'
 
 export const dynamic = 'force-dynamic'
 
-const SUPER_ADMIN_SECRET = process.env.SUPER_ADMIN_SECRET ?? ''
+const SUPER_ADMIN_SECRET = process.env.SUPER_ADMIN_SECRET
+if (!SUPER_ADMIN_SECRET) throw new Error('SUPER_ADMIN_SECRET not configured')
 
 function assertSuperAdmin(req: Request) {
   const auth = req.headers.get('x-super-admin-secret') ?? ''

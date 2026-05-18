@@ -8,15 +8,15 @@ export async function GET() {
   if (!auth.ok) return auth.response
 
   const checks = await Promise.allSettled([
-    pingClaude(),
+    pingGroq(),
     pingGemini(),
     pingAT(),
   ])
 
   const results = [
-    { name: 'Claude (Anthropic)', ...settle(checks[0]) },
-    { name: 'Gemini (Google)',    ...settle(checks[1]) },
-    { name: 'Africa\'s Talking', ...settle(checks[2]) },
+    { name: 'Groq (llama-3.3)',    ...settle(checks[0]) },
+    { name: 'Gemini (Google)',      ...settle(checks[1]) },
+    { name: 'Africa\'s Talking',   ...settle(checks[2]) },
   ]
 
   return NextResponse.json({ services: results, checkedAt: new Date().toISOString() })
@@ -27,11 +27,11 @@ function settle(r: PromiseSettledResult<{ ok: boolean; latencyMs: number }>) {
   return { ok: false, latencyMs: 0, error: String(r.reason) }
 }
 
-async function pingClaude() {
-  if (!process.env.ANTHROPIC_API_KEY) return { ok: false, latencyMs: 0, error: 'Key missing' }
+async function pingGroq() {
+  if (!process.env.GROQ_API_KEY) return { ok: false, latencyMs: 0, error: 'Key missing' }
   const t = Date.now()
-  const r = await fetch('https://api.anthropic.com/v1/models', {
-    headers: { 'x-api-key': process.env.ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01' },
+  const r = await fetch('https://api.groq.com/openai/v1/models', {
+    headers: { Authorization: `Bearer ${process.env.GROQ_API_KEY}` },
   })
   return { ok: r.ok, latencyMs: Date.now() - t }
 }

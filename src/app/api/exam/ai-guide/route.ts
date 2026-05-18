@@ -41,8 +41,8 @@ export async function POST(request: Request) {
   const info = await validateTeacherToken(token)
   if (!info) return NextResponse.json({ error: 'Invalid token' }, { status: 403 })
 
-  const anthropicKey = process.env.GROQ_API_KEY
-  if (!anthropicKey) {
+  const groqKey = process.env.GROQ_API_KEY
+  if (!groqKey) {
     console.error('[exam/ai-guide] GROQ_API_KEY not set')
     return NextResponse.json({ error: 'AI service not configured' }, { status: 500 })
   }
@@ -103,7 +103,7 @@ Generate a practical AI Teaching Guide. Return ONLY valid JSON (no markdown):
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${anthropicKey}`,
+        Authorization: `Bearer ${groqKey}`,
       },
       body: JSON.stringify({
         model: 'llama-3.1-8b-instant',

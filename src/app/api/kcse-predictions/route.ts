@@ -123,8 +123,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'classId required' }, { status: 400 })
   }
 
-  const ANTHROPIC_API_KEY = process.env.GROQ_API_KEY
-  if (!ANTHROPIC_API_KEY) {
+  const groqKey = process.env.GROQ_API_KEY
+  if (!groqKey) {
     return NextResponse.json({ error: 'AI service not configured' }, { status: 503 })
   }
 
@@ -176,7 +176,7 @@ export async function POST(req: NextRequest) {
     const prediction = await predictStudent(
       { id: student.id, full_name: student.full_name, form: student.current_form ?? '4' },
       marks,
-      ANTHROPIC_API_KEY
+      groqKey
     )
 
     if (prediction) {

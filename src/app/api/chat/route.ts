@@ -19,8 +19,8 @@ interface Message {
 }
 
 export async function POST(request: Request) {
-  const anthropicKey = process.env.GROQ_API_KEY
-  if (!anthropicKey) {
+  const groqKey = process.env.GROQ_API_KEY
+  if (!groqKey) {
     console.error('[chat] GROQ_API_KEY not set')
     return NextResponse.json({ error: 'Server misconfigured' }, { status: 500 })
   }
@@ -65,7 +65,7 @@ export async function POST(request: Request) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${anthropicKey}`,
+        Authorization: `Bearer ${groqKey}`,
       },
       body: JSON.stringify({
         model: 'llama-3.1-8b-instant',

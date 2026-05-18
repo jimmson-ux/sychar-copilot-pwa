@@ -20,8 +20,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Forbidden — subject teacher or above required' }, { status: 403 })
   }
 
-  const anthropicKey = process.env.GROQ_API_KEY
-  if (!anthropicKey) return NextResponse.json({ error: 'AI not configured' }, { status: 500 })
+  const groqKey = process.env.GROQ_API_KEY
+  if (!groqKey) return NextResponse.json({ error: 'AI not configured' }, { status: 500 })
 
   const body = await req.json().catch(() => ({})) as {
     class_name?: string
@@ -149,7 +149,7 @@ Return ONLY valid JSON:
   try {
     const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
-      headers: { Authorization: `Bearer ${anthropicKey}`, 'Content-Type': 'application/json' },
+      headers: { Authorization: `Bearer ${groqKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: 'llama-3.1-8b-instant',
         max_tokens: 2000,
