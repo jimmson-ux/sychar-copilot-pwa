@@ -5,6 +5,8 @@ export const dynamic = 'force-dynamic'
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { useSchoolId } from '@/hooks/useSchoolId'
+import { SchoolHealthCard } from '@/components/dashboard/SchoolHealthCard'
+import type { SchoolHealthSnapshot } from '@/components/dashboard/SchoolHealthCard'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -120,10 +122,11 @@ function TrafficDot({ color }: { color: 'green' | 'amber' | 'red' }) {
 export default function PrincipalDashboard() {
   const router = useRouter()
   const { schoolId } = useSchoolId()
-  const [data, setData]       = useState<OverviewData | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError]     = useState('')
-  const [name, setName]       = useState('')
+  const [data, setData]             = useState<OverviewData | null>(null)
+  const [healthData, setHealthData] = useState<SchoolHealthSnapshot | null>(null)
+  const [loading, setLoading]       = useState(true)
+  const [error, setError]           = useState('')
+  const [name, setName]             = useState('')
 
   // AI Command Center state
   const [aiSummary, setAiSummary]             = useState('')
@@ -215,10 +218,14 @@ export default function PrincipalDashboard() {
     setLoading(true)
     setError('')
     try {
-      const res = await fetch('/api/principal/overview')
-      if (res.status === 403) { router.replace('/dashboard'); return }
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      setData(await res.json())
+      const [overviewRes, healthRes] = await Promise.all([
+        fetch('/api/principal/overview'),
+        fetch('/api/principal/school-health'),
+      ])
+      if (overviewRes.status === 403) { router.replace('/dashboard'); return }
+      if (!overviewRes.ok) throw new Error(`HTTP ${overviewRes.status}`)
+      setData(await overviewRes.json())
+      if (healthRes.ok) setHealthData(await healthRes.json())
     } catch {
       setError('Failed to load dashboard data.')
     } finally {
@@ -339,6 +346,9 @@ export default function PrincipalDashboard() {
             </button>
           </div>
         </div>
+
+        {/* ── School Health Summary ───────────────────────────────────────── */}
+        {healthData && <SchoolHealthCard data={healthData} />}
 
         {/* ── Stats row ───────────────────────────────────────────────────── */}
         <div className="principal-panel" style={{ display: 'flex', gap: 12, marginBottom: 20, flexWrap: 'wrap' }}>
