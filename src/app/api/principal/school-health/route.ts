@@ -59,7 +59,7 @@ export async function GET() {
     termRes,
   ] = await Promise.all([
     sb.from('students').select('gender').eq('school_id', schoolId).eq('is_active', true),
-    sb.from('fee_balances').select('invoiced_amount, paid_amount').eq('school_id', schoolId),
+    sb.from('fee_balances').select('total_fees, amount_paid').eq('school_id', schoolId),
     sb.from('staff_records').select('id', { count: 'exact', head: true }).eq('school_id', schoolId).eq('is_active', true),
     sb.from('staff_records').select('id', { count: 'exact', head: true }).eq('school_id', schoolId).eq('is_active', true).eq('employment_type', 'tsc'),
     sb.from('staff_records').select('id', { count: 'exact', head: true }).eq('school_id', schoolId).eq('is_active', true).neq('employment_type', 'tsc'),
@@ -77,11 +77,11 @@ export async function GET() {
   const boys  = students.filter(s => { const g = String(s.gender ?? '').toLowerCase(); return g.startsWith('m') || g === 'boy' }).length
   const girls = students.filter(s => { const g = String(s.gender ?? '').toLowerCase(); return g.startsWith('f') || g === 'girl' }).length
 
-  // Fee health — fee_balances: invoiced_amount = total billed, paid_amount = total collected
-  type FeeBalRow = { invoiced_amount?: number | string; paid_amount?: number | string }
+  // Fee health — fee_balances: total_fees = total invoiced, amount_paid = total collected
+  type FeeBalRow = { total_fees?: number | string; amount_paid?: number | string }
   const feeRows = (voteHeadsRes.data ?? []) as FeeBalRow[]
-  const totalExpectedKES = feeRows.reduce((s, v) => s + Number(v.invoiced_amount ?? 0), 0)
-  const totalReceivedKES = feeRows.reduce((s, v) => s + Number(v.paid_amount ?? 0), 0)
+  const totalExpectedKES = feeRows.reduce((s, v) => s + Number(v.total_fees ?? 0), 0)
+  const totalReceivedKES = feeRows.reduce((s, v) => s + Number(v.amount_paid ?? 0), 0)
   const collectionPct = totalExpectedKES > 0 ? Math.round((totalReceivedKES / totalExpectedKES) * 100) : 0
 
   // Staff
