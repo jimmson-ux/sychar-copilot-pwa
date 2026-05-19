@@ -59,11 +59,11 @@ export async function GET() {
     termRes,
   ] = await Promise.all([
     sb.from('students').select('gender').eq('school_id', schoolId).eq('is_active', true),
-    sb.from('vote_heads').select('expected_amount, received_amount').eq('school_id', schoolId),
+    sb.from('fee_balances').select('invoiced_amount, paid_amount').eq('school_id', schoolId),
     sb.from('staff_records').select('id', { count: 'exact', head: true }).eq('school_id', schoolId).eq('is_active', true),
-    sb.from('staff_records').select('id', { count: 'exact', head: true }).eq('school_id', schoolId).eq('is_active', true).eq('employment_type', 'TSC'),
-    sb.from('staff_records').select('id', { count: 'exact', head: true }).eq('school_id', schoolId).eq('is_active', true).neq('employment_type', 'TSC'),
-    sb.from('merit_list').select('average').eq('school_id', schoolId).limit(500),
+    sb.from('staff_records').select('id', { count: 'exact', head: true }).eq('school_id', schoolId).eq('is_active', true).eq('employment_type', 'tsc'),
+    sb.from('staff_records').select('id', { count: 'exact', head: true }).eq('school_id', schoolId).eq('is_active', true).neq('employment_type', 'tsc'),
+    sb.from('merit_list').select('total_marks').eq('school_id', schoolId).limit(500),
     sb.from('discipline_records').select('id', { count: 'exact', head: true }).eq('school_id', schoolId).eq('status', 'open'),
     sb.from('suspension_records').select('id', { count: 'exact', head: true }).eq('school_id', schoolId).eq('status', 'approved'),
     sb.from('procurement_documents').select('id', { count: 'exact', head: true }).eq('school_id', schoolId).eq('document_type', 'lpo').in('workflow_status', ['pending_verification', 'pending_approval']),
@@ -77,11 +77,11 @@ export async function GET() {
   const boys  = students.filter(s => { const g = String(s.gender ?? '').toLowerCase(); return g.startsWith('m') || g === 'boy' }).length
   const girls = students.filter(s => { const g = String(s.gender ?? '').toLowerCase(); return g.startsWith('f') || g === 'girl' }).length
 
-  // Fee health
-  type VoteRow = { expected_amount?: number | string; received_amount?: number | string }
-  const voteHeads = (voteHeadsRes.data ?? []) as VoteRow[]
-  const totalExpectedKES = voteHeads.reduce((s, v) => s + Number(v.expected_amount ?? 0), 0)
-  const totalReceivedKES = voteHeads.reduce((s, v) => s + Number(v.received_amount ?? 0), 0)
+  // Fee health — fee_balances: invoiced_amount = total billed, paid_amount = total collected
+  type FeeBalRow = { invoiced_amount?: number | string; paid_amount?: number | string }
+  const feeRows = (voteHeadsRes.data ?? []) as FeeBalRow[]
+  const totalExpectedKES = feeRows.reduce((s, v) => s + Number(v.invoiced_amount ?? 0), 0)
+  const totalReceivedKES = feeRows.reduce((s, v) => s + Number(v.paid_amount ?? 0), 0)
   const collectionPct = totalExpectedKES > 0 ? Math.round((totalReceivedKES / totalExpectedKES) * 100) : 0
 
   // Staff
@@ -90,10 +90,10 @@ export async function GET() {
   const staffingGaps = staffGapsRes.count ?? 0
 
   // Performance
-  type MeritRow = { average?: number | string }
+  type MeritRow = { total_marks?: number | string }
   const merits = (meritRes.data ?? []) as MeritRow[]
   const meanScore = merits.length > 0
-    ? Math.round((merits.reduce((s, m) => s + Number(m.average ?? 0), 0) / merits.length) * 10) / 10
+    ? Math.round((merits.reduce((s, m) => s + Number(m.total_marks ?? 0), 0) / merits.length) * 10) / 10
     : null
 
   // Discipline + suspensions
