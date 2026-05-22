@@ -10,6 +10,7 @@ const withSerwist = withSerwistInit({
 })
 
 const nextConfig: NextConfig = {
+  output: 'standalone',
   compress: true,
   poweredByHeader: false,
 
