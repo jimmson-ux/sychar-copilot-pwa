@@ -15,9 +15,13 @@ import { z } from 'zod'
 import { requireParentAuth } from '@/middleware/verifyParentJWT'
 import { createAdminSupabaseClient } from '@/lib/supabase-server'
 
-// Model IDs are read from env — set ANTHROPIC_CHAT_MODEL in .env.local
-const ANTHROPIC_MODEL = anthropic(process.env.ANTHROPIC_CHAT_MODEL!)
-const GEMINI_MODEL    = google('gemini-2.0-flash')
+const GEMINI_MODEL = google('gemini-2.0-flash')
+
+function getAnthropicModel() {
+  const id = process.env.ANTHROPIC_CHAT_MODEL
+  if (!id) throw new Error('ANTHROPIC_CHAT_MODEL env var not configured')
+  return anthropic(id)
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -45,7 +49,7 @@ async function callAnthropic(
   userMessage: string,
 ): Promise<AIResult> {
   const { text } = await generateText({
-    model:  ANTHROPIC_MODEL,
+    model:  getAnthropicModel(),
     system: systemPrompt,
     messages: [
       ...history.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content })),
@@ -233,7 +237,7 @@ async function verificationWithToolCall(
   })
 
   const result = await generateText({
-    model:  ANTHROPIC_MODEL,
+    model:  getAnthropicModel(),
     system: buildVerificationPrompt(),
     messages: [
       ...history.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content })),
