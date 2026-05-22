@@ -1,34 +1,31 @@
 // POST /api/parent/chat/groq
-// AI fallback chain: Groq (primary, free) → AI Gateway [Gemini → Claude → GPT] (fallback)
-// Only 429 (rate-limit) and 503 (overloaded) trigger a fallback.
+// Primary: Anthropic Haiku (model set via ANTHROPIC_CHAT_MODEL env var)
+// Fallback: Gemini 2.0 Flash (rate-limit only)
 //
 // Verified parent   → full school context chat
-// Unverified parent → identity verification via Groq tool-call or AI Gateway extraction
+// Unverified parent → identity verification with tool extraction
 
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
-import Groq from 'groq-sdk'
-import { generateText } from 'ai'
+import { anthropic } from '@ai-sdk/anthropic'
 import { google } from '@ai-sdk/google'
+import { generateText, tool, stepCountIs } from 'ai'
+import { z } from 'zod'
 import { requireParentAuth } from '@/middleware/verifyParentJWT'
 import { createAdminSupabaseClient } from '@/lib/supabase-server'
 
-// ── Groq singleton ─────────────────────────────────────────────────────────────
+// Model IDs are read from env — set ANTHROPIC_CHAT_MODEL in .env.local
+const ANTHROPIC_MODEL = anthropic(process.env.ANTHROPIC_CHAT_MODEL!)
+const GEMINI_MODEL    = google('gemini-2.0-flash')
 
-let _groq: Groq | null = null
-function getGroq() {
-  if (!_groq) _groq = new Groq({ apiKey: process.env.GROQ_API_KEY ?? '' })
-  return _groq
-}
-
-// ── Types ──────────────────────────────────────────────────────────────────────
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 type ConversationMessage = { role: 'user' | 'assistant'; content: string }
 type CtxType = Record<string, unknown>
 type AIResult = { reply: string; provider: string }
 
-// ── Rate-limit / overload detection ───────────────────────────────────────────
+// ── Rate-limit detection ──────────────────────────────────────────────────────
 
 function isRateLimitOrOverload(err: unknown): boolean {
   if (!err || typeof err !== 'object') return false
@@ -40,74 +37,41 @@ function isRateLimitOrOverload(err: unknown): boolean {
     msg.includes('overloaded') || msg.includes('capacity')
 }
 
-// ── Provider calls ─────────────────────────────────────────────────────────────
+// ── Provider calls ────────────────────────────────────────────────────────────
 
-async function callGroq(
+async function callAnthropic(
   systemPrompt: string,
   history: ConversationMessage[],
   userMessage: string,
 ): Promise<AIResult> {
-  const completion = await getGroq().chat.completions.create({
-    model:       'llama-3.3-70b-versatile',
-    max_tokens:  300,
-    temperature: 0.7,
+  const { text } = await generateText({
+    model:  ANTHROPIC_MODEL,
+    system: systemPrompt,
     messages: [
-      { role: 'system', content: systemPrompt },
-      ...history,
+      ...history.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content })),
       { role: 'user', content: userMessage },
     ],
+    maxOutputTokens: 400,
   })
-  return {
-    reply:    completion.choices[0]?.message?.content?.trim() ?? '',
-    provider: 'groq',
-  }
+  return { reply: text.trim(), provider: 'anthropic' }
 }
 
-// Direct provider fallback: Gemini Flash → Claude Haiku
-async function callDirectFallback(
+async function callGeminiFallback(
   systemPrompt: string,
   history: ConversationMessage[],
   userMessage: string,
 ): Promise<AIResult> {
-  const messages = [
-    ...history.map(m => ({
-      role:    m.role as 'user' | 'assistant',
-      content: m.content,
-    })),
-    { role: 'user' as const, content: userMessage },
-  ]
-
-  const providers: Array<{ fn: () => Promise<string>; name: string }> = [
-    {
-      name: 'gemini',
-      fn: async () => {
-        const { text } = await generateText({
-          model: google('gemini-2.0-flash'),
-          system: systemPrompt,
-          messages,
-          maxOutputTokens: 300,
-        })
-        return text
-      },
-    },
-  ]
-
-  for (const p of providers) {
-    try {
-      const text = await p.fn()
-      return { reply: text.trim(), provider: p.name }
-    } catch (err) {
-      if (!isRateLimitOrOverload(err)) throw err
-    }
-  }
-
-  return {
-    reply:    'Our AI assistant is temporarily busy. Please try again in a moment.',
-    provider: 'none',
-  }
+  const { text } = await generateText({
+    model:  GEMINI_MODEL,
+    system: systemPrompt,
+    messages: [
+      ...history.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content })),
+      { role: 'user', content: userMessage },
+    ],
+    maxOutputTokens: 400,
+  })
+  return { reply: text.trim(), provider: 'gemini' }
 }
-
-// ── Fallback orchestrator: Groq first, then direct providers ─────────────────
 
 async function callWithFallback(
   systemPrompt: string,
@@ -115,16 +79,14 @@ async function callWithFallback(
   userMessage: string,
 ): Promise<AIResult> {
   try {
-    return await callGroq(systemPrompt, history, userMessage)
+    return await callAnthropic(systemPrompt, history, userMessage)
   } catch (err) {
     if (!isRateLimitOrOverload(err)) throw err
   }
-
-  // Groq rate-limited → direct provider fallback (Gemini → Claude)
-  return callDirectFallback(systemPrompt, history, userMessage)
+  return callGeminiFallback(systemPrompt, history, userMessage)
 }
 
-// ── Helpers ────────────────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function detectLanguage(text: string): 'sw' | 'en' {
   return /\b(habari|mtoto|shule|ada|malipo|mwalimu|tafadhali|asante|sawa|nini|lini)\b/i.test(text)
@@ -186,25 +148,22 @@ Your job is to verify their identity so they can access their child's school dat
 INSTRUCTIONS:
 1. Greet them warmly and explain you need to verify their identity.
 2. Ask for: their child's FULL NAME and ADMISSION NUMBER.
-3. Once they provide both details, call the verify_parent tool immediately.
+3. Once they provide both details, call verify_parent immediately.
 4. Do NOT reveal any student data until verification is confirmed.
-5. If they seem confused, reassure them this is a one-time security check.
-6. Keep it friendly and brief.`
+5. Keep it friendly and brief.`
 }
 
 function buildExtractionPrompt(conversation: string) {
-  return `You are a data extraction assistant. From the conversation below, extract the student's full name and admission number if the parent has provided them.
+  return `Extract student full name and admission number from this conversation. Return ONLY valid JSON.
 
 Conversation:
 ${conversation}
 
-Respond with ONLY valid JSON in this exact format:
-{"student_name": "full name here", "admission_number": "number here"}
-If either value is missing from the conversation, use null.
-{"student_name": null, "admission_number": null}`
+Format: {"student_name": "...", "admission_number": "..."}
+Use null for any missing value.`
 }
 
-// ── Verification logic ─────────────────────────────────────────────────────────
+// ── Verification logic ────────────────────────────────────────────────────────
 
 async function runVerification(
   svc: ReturnType<typeof createAdminSupabaseClient>,
@@ -217,8 +176,6 @@ async function runVerification(
   | { verified: false; reason: string }
 > {
   const term = admissionNumber.trim()
-
-  // Search by admission_no (new) OR admission_number (legacy) OR name match
   const { data: students } = await svc
     .from('students')
     .select('id, full_name, class_name, parent_email, parent_phone')
@@ -254,45 +211,47 @@ async function runVerification(
   }
 }
 
-// ── Groq tool-call verification (primary verification path) ───────────────────
+// ── Verification tool call via AI SDK ─────────────────────────────────────────
 
-async function groqVerificationCall(
+async function verificationWithToolCall(
   history: ConversationMessage[],
   userMessage: string,
-) {
-  const verifyTool = {
-    type: 'function' as const,
-    function: {
-      name:        'verify_parent',
-      description: 'Verify parent identity using student details provided by the parent',
-      parameters: {
-        type: 'object',
-        properties: {
-          student_name:     { type: 'string', description: "Child's full name" },
-          admission_number: { type: 'string', description: "Child's admission number" },
-        },
-        required: ['student_name', 'admission_number'],
-      },
-    },
-  }
+): Promise<{ toolArgs: { student_name: string; admission_number: string } | null; promptReply: string | null }> {
+  let verifyArgs: { student_name: string; admission_number: string } | null = null
+  let promptReply: string | null = null
 
-  const completion = await getGroq().chat.completions.create({
-    model:       'llama-3.3-70b-versatile',
-    max_tokens:  200,
-    temperature: 0.5,
-    tools:       [verifyTool],
-    tool_choice: 'auto',
-    messages: [
-      { role: 'system', content: buildVerificationPrompt() },
-      ...history,
-      { role: 'user', content: userMessage },
-    ],
+  const verifyParentTool = tool({
+    description: 'Verify parent identity using student full name and admission number',
+    inputSchema: z.object({
+      student_name:     z.string().describe("Child's full name"),
+      admission_number: z.string().describe("Child's admission number"),
+    }),
+    execute: async (args: { student_name: string; admission_number: string }) => {
+      verifyArgs = args
+      return { status: 'verifying' as const }
+    },
   })
 
-  return completion.choices[0]
+  const result = await generateText({
+    model:  ANTHROPIC_MODEL,
+    system: buildVerificationPrompt(),
+    messages: [
+      ...history.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content })),
+      { role: 'user', content: userMessage },
+    ],
+    tools:      { verify_parent: verifyParentTool },
+    maxOutputTokens: 300,
+    stopWhen:   stepCountIs(2),
+  })
+
+  if (!verifyArgs) {
+    promptReply = result.text?.trim() ?? null
+  }
+
+  return { toolArgs: verifyArgs, promptReply }
 }
 
-// Extraction fallback when Groq is rate-limited
+// Extraction fallback when Anthropic is rate-limited
 async function extractDetailsWithFallback(
   history: ConversationMessage[],
   userMessage: string,
@@ -303,13 +262,12 @@ async function extractDetailsWithFallback(
   ].join('\n')
 
   try {
-    const r = await generateText({
-      model:           google('gemini-2.0-flash'),
-      system:          'You are a JSON extraction assistant. Return only valid JSON.',
-      prompt:          buildExtractionPrompt(conversation),
+    const { text } = await generateText({
+      model:     GEMINI_MODEL,
+      system:    'You are a JSON extraction assistant. Return only valid JSON.',
+      prompt:    buildExtractionPrompt(conversation),
       maxOutputTokens: 150,
     })
-    const text = r.text
     const json = text.match(/\{[\s\S]*\}/)?.[0]
     if (!json) return null
     const parsed = JSON.parse(json) as { student_name?: string | null; admission_number?: string | null }
@@ -320,7 +278,7 @@ async function extractDetailsWithFallback(
   } catch { return null }
 }
 
-// ── Main handler ───────────────────────────────────────────────────────────────
+// ── Main handler ──────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
   const parent = await requireParentAuth(req)
@@ -349,7 +307,7 @@ export async function POST(req: NextRequest) {
   const isSwahili  = detectLanguage(message) === 'sw'
   const history: ConversationMessage[] = (body.conversationHistory ?? []).slice(-10)
 
-  // ── VERIFIED PARENT — full context chat ────────────────────────────────────
+  // ── VERIFIED PARENT — full context chat ───────────────────────────────────
   if (hasContext) {
     const schoolName = (ctx as { school?: { name?: string } }).school?.name ?? 'the school'
     const term       = String((ctx as { school?: { term?: string } }).school?.term ?? '1')
@@ -379,58 +337,49 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ reply, context, language: isSwahili ? 'sw' : 'en', provider })
   }
 
-  // ── UNVERIFIED PARENT — identity verification ──────────────────────────────
+  // ── UNVERIFIED PARENT — identity verification ─────────────────────────────
 
-  let groqChoice = null
+  let toolResult: Awaited<ReturnType<typeof verificationWithToolCall>> | null = null
   try {
-    groqChoice = await groqVerificationCall(history, message)
+    toolResult = await verificationWithToolCall(history, message)
   } catch (err) {
     if (!isRateLimitOrOverload(err)) throw err
   }
 
-  // Groq returned a tool call → run verification
-  if (
-    groqChoice?.finish_reason === 'tool_calls' &&
-    groqChoice.message.tool_calls?.[0]?.function?.name === 'verify_parent'
-  ) {
-    const toolCall = groqChoice.message.tool_calls[0]
-    let args: { student_name?: string; admission_number?: string } = {}
-    try { args = JSON.parse(toolCall.function.arguments) } catch { /* ignore */ }
-
+  if (toolResult?.toolArgs) {
     return handleVerification(
-      svc, parent, args.student_name ?? '', args.admission_number ?? '',
-      message, history, isSwahili, toolCall,
+      svc, parent,
+      toolResult.toolArgs.student_name,
+      toolResult.toolArgs.admission_number,
+      message, history, isSwahili,
     )
   }
 
-  // Groq rate-limited AND user seems to have provided details → extraction fallback
+  if (toolResult?.promptReply) {
+    return NextResponse.json({
+      reply:    toolResult.promptReply,
+      context:  'verification',
+      language: isSwahili ? 'sw' : 'en',
+      verified: false,
+      provider: 'anthropic',
+    })
+  }
+
+  // Anthropic rate-limited AND user seems to have provided details → extraction fallback
   const combined = [...history, { role: 'user' as const, content: message }]
   const hasAdmission = combined.some(m => /\b[A-Z]{2,4}\/\d{3,6}|\d{4,8}\b/.test(m.content))
   const hasName      = combined.some(m => m.content.trim().split(/\s+/).length >= 2)
 
-  if (hasAdmission && hasName && !groqChoice) {
+  if (hasAdmission && hasName && !toolResult) {
     const extracted = await extractDetailsWithFallback(history, message)
     if (extracted?.student_name && extracted?.admission_number) {
       return handleVerification(
         svc, parent, extracted.student_name, extracted.admission_number,
-        message, history, isSwahili, null,
+        message, history, isSwahili,
       )
     }
   }
 
-  // Groq still prompting the user
-  if (groqChoice) {
-    return NextResponse.json({
-      reply:    groqChoice.message.content?.trim() ??
-        "Hi! To get started, I need to verify your identity. Please share your child's full name and admission number.",
-      context:  'verification',
-      language: isSwahili ? 'sw' : 'en',
-      verified: false,
-      provider: 'groq',
-    })
-  }
-
-  // All of Groq rate-limited + no details yet → AI Gateway prompts the parent
   const { reply: fallbackPrompt, provider } = await callWithFallback(
     buildVerificationPrompt(), history, message,
   )
@@ -443,7 +392,7 @@ export async function POST(req: NextRequest) {
   })
 }
 
-// ── Shared verification outcome handler ───────────────────────────────────────
+// ── Shared verification outcome handler ──────────────────────────────────────
 
 async function handleVerification(
   svc: ReturnType<typeof createAdminSupabaseClient>,
@@ -453,7 +402,6 @@ async function handleVerification(
   originalMessage: string,
   history: ConversationMessage[],
   isSwahili: boolean,
-  toolCall: { id: string; type: 'function'; function: { name: string; arguments: string } } | null,
 ): Promise<NextResponse> {
   const result = await runVerification(
     svc, parent.phone, parent.schoolId, studentName, admissionNumber,
@@ -466,7 +414,6 @@ async function handleVerification(
     return NextResponse.json({ reply: errMsg, context: 'verification', language: 'en', verified: false })
   }
 
-  // Re-fetch context now that the account is linked
   const { data: newCtx } = await svc
     .rpc('get_parent_context_for_ai', { p_parent_id: parent.phone })
 
@@ -477,43 +424,13 @@ async function handleVerification(
   const systemPrompt = buildFullContextPrompt(
     newCtx as CtxType, schoolName, term, year, isSwahili,
   )
-  const welcomeMsg = `Great, I have been verified. Please greet me warmly and show me a summary of ${result.studentName}'s school status.`
+  const welcomeMsg = `I have been verified. Please greet me warmly and show a summary of ${result.studentName}'s school status.`
 
-  let reply    = `Welcome! I've linked your account to ${result.studentName} in ${result.className}.`
-  let provider = 'none'
-
-  if (toolCall) {
-    // Groq tool-response path (proper tool message format)
-    try {
-      const secondCompletion = await getGroq().chat.completions.create({
-        model:       'llama-3.3-70b-versatile',
-        max_tokens:  300,
-        temperature: 0.7,
-        messages: [
-          { role: 'system',    content: systemPrompt },
-          { role: 'user',      content: originalMessage },
-          { role: 'assistant' as const, content: '', tool_calls: [{ ...toolCall, type: 'function' as const }] },
-          {
-            role:         'tool',
-            tool_call_id: toolCall.id,
-            content:      JSON.stringify({ verified: true, student_name: result.studentName, class_name: result.className }),
-          },
-          { role: 'user', content: welcomeMsg },
-        ],
-      })
-      reply    = secondCompletion.choices[0]?.message?.content?.trim() ?? reply
-      provider = 'groq'
-    } catch (err) {
-      if (!isRateLimitOrOverload(err)) throw err
-      const r = await callWithFallback(systemPrompt, history, welcomeMsg)
-      reply    = r.reply
-      provider = r.provider
-    }
-  } else {
-    const r = await callWithFallback(systemPrompt, history, welcomeMsg)
-    reply    = r.reply
-    provider = r.provider
-  }
+  const { reply, provider } = await callWithFallback(
+    systemPrompt,
+    [...history, { role: 'user', content: originalMessage }],
+    welcomeMsg,
+  )
 
   return NextResponse.json({
     reply,
