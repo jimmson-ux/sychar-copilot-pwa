@@ -224,7 +224,7 @@ export async function assignCover(payload: {
     type:       'cover_duty',
     url:        '/teacher-dashboard/timetable',
     requires_interaction: true,
-  }).throwOnError().catch(() => {})
+  }).then(() => {}, () => {})
 
   return { ok: true }
 }

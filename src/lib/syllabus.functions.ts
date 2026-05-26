@@ -32,7 +32,7 @@ export async function getSyllabusCoverage(classId: string) {
 
   const bySubject: Record<string, { total: number; completed: number }> = {}
   for (const row of data ?? []) {
-    const topic   = row.syllabus_topics as { subject: string } | null
+    const topic   = row.syllabus_topics as unknown as { subject: string } | null
     const subject = topic?.subject ?? 'Unknown'
     if (!bySubject[subject]) bySubject[subject] = { total: 0, completed: 0 }
     bySubject[subject].total++
@@ -97,7 +97,7 @@ export async function getBehindScheduleTopics() {
 
   return (data ?? [])
     .map((row) => {
-      const topic    = row.syllabus_topics as { expected_week: number; topic_name: string; subject: string } | null
+      const topic    = row.syllabus_topics as unknown as { expected_week: number; topic_name: string; subject: string } | null
       const weeksLate = topic ? Math.max(0, currentWeek - (topic.expected_week ?? currentWeek)) : 0
       return { ...row, weeksLate, flag: weeksLate >= 2 ? 'RED' : weeksLate >= 1 ? 'AMBER' : null }
     })

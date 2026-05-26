@@ -162,9 +162,7 @@ export async function processQRScan(payload: {
       title:      '⚠ Late Arrival',
       message:    `${student.full_name} arrived late to ${slot.subject} (${minutesElapsed} minutes late).`,
       type:       'attendance',
-    }).throwOnError().catch(() => {
-      // pwa_notifications insert failure is non-fatal
-    })
+    }).then(() => {}, () => {})
   }
 
   return {
@@ -243,7 +241,7 @@ export async function autoMarkAbsent(
       title:      '⚠ Attendance Alert',
       message:    `${s.full_name} was marked absent. If unexpected, contact the school.`,
       type:       'attendance',
-    }).throwOnError().catch(() => {})
+    }).then(() => {}, () => {})
   }
 
   return { marked: absent.length }

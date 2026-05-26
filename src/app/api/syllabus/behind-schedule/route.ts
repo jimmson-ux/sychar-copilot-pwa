@@ -43,7 +43,7 @@ export async function GET() {
 
   const behind = (data ?? [])
     .map((row) => {
-      const topic    = row.syllabus_topics as { expected_week: number; topic_name: string; subject: string; class_level: string } | null
+      const topic    = row.syllabus_topics as unknown as { expected_week: number; topic_name: string; subject: string; class_level: string } | null
       const weeksLate = topic ? Math.max(0, currentWeek - (topic.expected_week ?? currentWeek)) : 0
       return { ...row, weeksLate, flag: weeksLate >= 2 ? 'RED' : weeksLate >= 1 ? 'AMBER' : null }
     })

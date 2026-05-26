@@ -43,7 +43,7 @@ export async function GET(
   // Group by subject and compute coverage %
   const bySubject: Record<string, { total: number; completed: number; topics: typeof data }> = {}
   for (const row of data ?? []) {
-    const topic   = row.syllabus_topics as { subject: string } | null
+    const topic   = row.syllabus_topics as unknown as { subject: string } | null
     const subject = topic?.subject ?? 'Unknown'
     if (!bySubject[subject]) bySubject[subject] = { total: 0, completed: 0, topics: [] }
     bySubject[subject].total++
