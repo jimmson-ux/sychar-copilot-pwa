@@ -41,7 +41,7 @@ BEGIN
     'phone',           v_staff.phone,
     'department',      v_staff.department,
     'sub_role',        v_staff.sub_role,
-    'role',            v_staff.role,
+    'role',            v_staff.sub_role,
     'employment_type', v_staff.employment_type,
     'is_active',       v_staff.is_active,
     'can_login',       v_staff.can_login
