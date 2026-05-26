@@ -1,7 +1,7 @@
 -- ================================================================
 -- ATHENA CRON JOBS — 2026-05-26
 --
--- Schedules the three Athena sprint edge functions:
+-- Schedules the three Timetable engine sprint edge functions:
 --   analyze-consumption    — Monday 06:00 EAT (03:00 UTC)
 --   daily-attendance-summary — Weekdays 15:30 EAT (12:30 UTC)
 --   weekly-syllabus-check  — Friday 16:00 EAT (13:00 UTC)

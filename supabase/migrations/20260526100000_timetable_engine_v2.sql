@@ -369,7 +369,7 @@ DECLARE
 BEGIN
   SELECT id INTO v_school_id
   FROM public.schools
-  WHERE slug = 'nkoroimixed'
+  WHERE subdomain = 'nkoroimixed'
   LIMIT 1;
 
   IF v_school_id IS NULL THEN

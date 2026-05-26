@@ -69,24 +69,52 @@ CREATE POLICY "st_service" ON public.syllabus_topics
 
 
 -- ── 2. SYLLABUS PROGRESS (actual per-class coverage) ─────────────
+-- NOTE: syllabus_progress may already exist from the teacher-dashboard sprint
+-- (2026-05-24) with a partial schema. We use CREATE TABLE IF NOT EXISTS and
+-- then ALTER TABLE ADD COLUMN IF NOT EXISTS to bring it to the target schema.
 
 CREATE TABLE IF NOT EXISTS public.syllabus_progress (
   id             uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
-  school_id      uuid        NOT NULL REFERENCES public.schools(id) ON DELETE CASCADE,
-  topic_id       uuid        NOT NULL REFERENCES public.syllabus_topics(id) ON DELETE CASCADE,
-  class_id       text        NOT NULL,   -- matches timetable_periods.class_id
+  school_id      uuid        REFERENCES public.schools(id) ON DELETE CASCADE,
+  topic_id       uuid        REFERENCES public.syllabus_topics(id) ON DELETE CASCADE,
+  class_id       text        NOT NULL,
   class_name     text,
   teacher_id     uuid        REFERENCES public.staff_records(id) ON DELETE SET NULL,
   status         text        DEFAULT 'Pending'
     CHECK (status IN ('Pending','InProgress','Completed','Skipped')),
   completed_at   date,
   notes          text,
-  updated_at     timestamptz DEFAULT now(),
-  UNIQUE (topic_id, class_id)
+  updated_at     timestamptz DEFAULT now()
 );
 
+-- Ensure all required columns exist on pre-existing table
+ALTER TABLE public.syllabus_progress
+  ADD COLUMN IF NOT EXISTS school_id    uuid REFERENCES public.schools(id) ON DELETE CASCADE,
+  ADD COLUMN IF NOT EXISTS topic_id     uuid REFERENCES public.syllabus_topics(id) ON DELETE CASCADE,
+  ADD COLUMN IF NOT EXISTS class_name   text,
+  ADD COLUMN IF NOT EXISTS teacher_id   uuid REFERENCES public.staff_records(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS status       text DEFAULT 'Pending',
+  ADD COLUMN IF NOT EXISTS completed_at date,
+  ADD COLUMN IF NOT EXISTS notes        text,
+  ADD COLUMN IF NOT EXISTS updated_at   timestamptz DEFAULT now();
+
+-- Add unique constraint only if it doesn't already exist
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'syllabus_progress_topic_id_class_id_key'
+      AND conrelid = 'public.syllabus_progress'::regclass
+  ) THEN
+    ALTER TABLE public.syllabus_progress ADD CONSTRAINT syllabus_progress_topic_id_class_id_key UNIQUE (topic_id, class_id);
+  END IF;
+EXCEPTION WHEN others THEN
+  NULL; -- ignore if constraint can't be added
+END $$;
+
 CREATE INDEX IF NOT EXISTS idx_sp_school_class
-  ON public.syllabus_progress (school_id, class_id, status);
+  ON public.syllabus_progress (school_id, class_id, status)
+  WHERE school_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_sp_teacher
   ON public.syllabus_progress (teacher_id, status);
 

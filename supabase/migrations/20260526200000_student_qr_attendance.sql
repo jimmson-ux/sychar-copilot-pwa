@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS public.student_qr_attendance (
   teacher_id           uuid        NOT NULL REFERENCES public.staff_records(id) ON DELETE SET NULL,
   scanned_at           timestamptz NOT NULL DEFAULT now(),
   -- Computed column so we can put a unique constraint on (slot, student, day)
-  scan_date            date        GENERATED ALWAYS AS (scanned_at::date) STORED,
+  scan_date            date        GENERATED ALWAYS AS ((scanned_at AT TIME ZONE 'UTC')::date) STORED,
   scan_status          text        NOT NULL DEFAULT 'Present'
     CHECK (scan_status IN ('Present','Late','Absent','Invalid','Duplicate')),
   device_info          text,

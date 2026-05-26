@@ -71,25 +71,40 @@ ALTER TABLE public.pwa_notifications REPLICA IDENTITY FULL;
 
 CREATE TABLE IF NOT EXISTS public.duty_remarks (
   id               uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
-  school_id        uuid        NOT NULL REFERENCES public.schools(id) ON DELETE CASCADE,
+  school_id        uuid        REFERENCES public.schools(id) ON DELETE CASCADE,
   teacher_id       uuid        REFERENCES public.staff_records(id) ON DELETE SET NULL,
   duty_date        date        NOT NULL DEFAULT CURRENT_DATE,
-  duty_week_start  date        NOT NULL,
-  category         text        NOT NULL DEFAULT 'General'
-    CHECK (category IN ('Attendance','Discipline','Infrastructure','Safety','General','Incident')),
+  duty_week_start  date,
+  category         text        NOT NULL DEFAULT 'General',
   remark           text        NOT NULL,
-  severity         text        DEFAULT 'Normal'
-    CHECK (severity IN ('Normal','Amber','Red')),
+  severity         text        DEFAULT 'Normal',
   requires_followup boolean    DEFAULT false,
   followup_by      uuid        REFERENCES public.staff_records(id) ON DELETE SET NULL,
   resolved_at      timestamptz,
   created_at       timestamptz DEFAULT now()
 );
 
+-- Ensure all required columns exist on pre-existing table
+ALTER TABLE public.duty_remarks
+  ADD COLUMN IF NOT EXISTS school_id        uuid REFERENCES public.schools(id) ON DELETE CASCADE,
+  ADD COLUMN IF NOT EXISTS teacher_id       uuid REFERENCES public.staff_records(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS duty_date        date DEFAULT CURRENT_DATE,
+  ADD COLUMN IF NOT EXISTS duty_week_start  date,
+  ADD COLUMN IF NOT EXISTS category         text DEFAULT 'General',
+  ADD COLUMN IF NOT EXISTS remark           text,
+  ADD COLUMN IF NOT EXISTS severity         text DEFAULT 'Normal',
+  ADD COLUMN IF NOT EXISTS requires_followup boolean DEFAULT false,
+  ADD COLUMN IF NOT EXISTS followup_by      uuid REFERENCES public.staff_records(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS resolved_at      timestamptz,
+  ADD COLUMN IF NOT EXISTS created_at       timestamptz DEFAULT now();
+
+-- Indexes use partial clauses to avoid failures on nullable columns
 CREATE INDEX IF NOT EXISTS idx_dr_school_week
-  ON public.duty_remarks (school_id, duty_week_start DESC, duty_date DESC);
+  ON public.duty_remarks (school_id, duty_week_start DESC, duty_date DESC)
+  WHERE school_id IS NOT NULL AND duty_week_start IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_dr_teacher
-  ON public.duty_remarks (teacher_id, duty_date DESC);
+  ON public.duty_remarks (teacher_id, duty_date DESC)
+  WHERE teacher_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_dr_followup
   ON public.duty_remarks (school_id, requires_followup, resolved_at)
   WHERE requires_followup = true;
