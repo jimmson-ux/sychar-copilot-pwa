@@ -2,13 +2,27 @@
  * Generates public/firebase-messaging-sw.js from NEXT_PUBLIC_FIREBASE_* env vars.
  * Run automatically via "prebuild" script in package.json.
  *
+ * Reads .env.local (and .env) so the script works when invoked directly with `node`,
+ * not just inside `next build` which auto-loads these files.
+ *
  * If env vars are not set (CI without Firebase), writes a no-op stub so the build succeeds.
  */
-import { writeFileSync } from 'fs';
+import { writeFileSync, readFileSync, existsSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const root = resolve(__dirname, '..');
+
+// Load .env.local then .env — later files don't override earlier values
+for (const file of ['.env.local', '.env']) {
+  const fp = resolve(root, file);
+  if (!existsSync(fp)) continue;
+  for (const line of readFileSync(fp, 'utf8').split('\n')) {
+    const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*"?([^"\n]*)"?\s*$/);
+    if (m && !process.env[m[1]]) process.env[m[1]] = m[2];
+  }
+}
 
 const config = {
   apiKey:            process.env.NEXT_PUBLIC_FIREBASE_API_KEY            ?? '',
