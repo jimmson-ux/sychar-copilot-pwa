@@ -80,6 +80,7 @@ const NAV: NavItem[] = [
   { label: 'Counselling',      href: '/dashboard/counselling',         icon: '💬', roles: ['guidance_counselling',...LEADERSHIP] },
   { label: 'Duty Appraisals',  href: '/dashboard/duty-appraisals',    icon: '⭐', roles: LEADERSHIP },
   { label: 'My Duties',        href: '/dashboard/my-duties',           icon: '📌', roles: TEACHERS },
+  { label: 'Lesson Plans',    href: '/dashboard/lesson-plans',        icon: '📝', roles: [...TEACHERS, ...HODS, ...LEADERSHIP] },
   { label: 'Pathways',         href: '/dashboard/pathways',            icon: '🧭', roles: [...LEADERSHIP,...HODS,...PATHWAY_HEADS] },
   { label: 'Scanner',          href: '/dashboard/scanner',             icon: '📄', roles: 'all' },
   { label: 'QR Codes',         href: '/dashboard/qr-management',      icon: '📲', roles: [...LEADERSHIP,...HODS,'qaso'] },
