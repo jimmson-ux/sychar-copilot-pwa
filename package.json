@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "prebuild": "node scripts/gen-firebase-sw.mjs",
     "build": "next build --webpack",
     "dev": "next dev",
     "start": "next start",
@@ -27,6 +28,7 @@
     "@vercel/speed-insights": "^2.0.0",
     "ai": "^6.0.168",
     "dexie": "^4.4.2",
+    "firebase": "^12.13.0",
     "framer-motion": "^12.38.0",
     "groq-sdk": "^1.1.2",
     "html5-qrcode": "^2.3.8",

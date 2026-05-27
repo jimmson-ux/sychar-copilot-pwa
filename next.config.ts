@@ -50,11 +50,11 @@ const nextConfig: NextConfig = {
             key: 'Content-Security-Policy',
             value: [
               "default-src 'self'",
-              "script-src 'self' 'unsafe-eval' 'unsafe-inline'",
+              "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://www.gstatic.com",
               "style-src 'self' 'unsafe-inline'",
               "font-src 'self' data:",
               "img-src 'self' data: blob: https: https://*.supabase.co",
-              "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.anthropic.com https://generativelanguage.googleapis.com https://api.cloudinary.com",
+              "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.anthropic.com https://generativelanguage.googleapis.com https://fcm.googleapis.com https://firebase.googleapis.com https://api.cloudinary.com",
               "media-src 'self' blob: https://*.supabase.co",
               "worker-src 'self' blob:",
               "frame-ancestors 'none'",
@@ -91,9 +91,22 @@ const nextConfig: NextConfig = {
         ],
       },
       {
+        source: '/_next/static/:path*',
+        headers: [
+          { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' },
+        ],
+      },
+      {
         source: '/sw.js',
         headers: [
           { key: 'Cache-Control', value: 'public, max-age=0, must-revalidate' },
+          { key: 'Service-Worker-Allowed', value: '/' },
+        ],
+      },
+      {
+        source: '/firebase-messaging-sw.js',
+        headers: [
+          { key: 'Cache-Control', value: 'no-cache' },
           { key: 'Service-Worker-Allowed', value: '/' },
         ],
       },
