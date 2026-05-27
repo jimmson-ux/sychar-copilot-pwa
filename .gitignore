@@ -55,3 +55,6 @@ next-env.d.ts
 # Claude Code local settings (may contain API keys)
 .claude/settings.local.json
 errors.log
+
+# MCP config contains access tokens — keep local only
+.mcp.json
