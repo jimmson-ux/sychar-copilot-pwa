@@ -51,3 +51,7 @@ next-env.d.ts
 .dev.vars*
 !.dev.vars.example
 !.env.example
+
+# Claude Code local settings (may contain API keys)
+.claude/settings.local.json
+errors.log
