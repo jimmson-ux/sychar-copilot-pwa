@@ -1,0 +1,29 @@
+# Wrangler dev vars — copy to .dev.vars and fill in real values.
+# These are injected into the Cloudflare Worker at runtime (wrangler dev / wrangler deploy).
+# NEXT_PUBLIC_* vars must ALSO be in .env.local — they are baked into the Next.js bundle at build time.
+
+# ─── Supabase ─────────────────────────────────────────────────────────────────
+NEXT_PUBLIC_SUPABASE_URL=https://xwgtsldimlrhtgvpnjnd.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
+
+# ─── Anthropic AI ─────────────────────────────────────────────────────────────
+ANTHROPIC_API_KEY=
+
+# ─── Firebase (baked into bundle — must be set before `npm run build`) ────────
+NEXT_PUBLIC_FIREBASE_API_KEY=
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=
+NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=
+NEXT_PUBLIC_FIREBASE_APP_ID=
+NEXT_PUBLIC_FIREBASE_VAPID_KEY=
+
+# ─── Africa's Talking ─────────────────────────────────────────────────────────
+AT_API_KEY=
+AT_USERNAME=
+AT_SENDER_ID=NKOROI
+AT_WEBHOOK_SECRET=
+
+# ─── QR / JWT signing ─────────────────────────────────────────────────────────
+SYCHAR_QR_SECRET=
+STAFF_JWT_SECRET=
