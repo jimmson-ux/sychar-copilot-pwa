@@ -118,18 +118,20 @@ export async function POST(req: NextRequest) {
   // ── Step 4: Generate + save slug ───────────────────────────────────────────
   const { data: slug } = await db.rpc('generate_slug_from_name', { p_name: school_name })
   if (slug) {
-    await db.from('tenant_configs').update({ slug }).eq('school_id', schoolId)
+    await db.from('tenant_configs')
+      .upsert({ school_id: schoolId, slug }, { onConflict: 'school_id' })
   }
 
-  // ── Step 5: Fetch auto-generated short_code ────────────────────────────────
+  // ── Step 5: Fetch auto-generated short_code + resolved slug ───────────────
   const { data: tenant } = await db
     .from('tenant_configs')
-    .select('school_short_code')
+    .select('school_short_code, slug')
     .eq('school_id', schoolId)
     .single()
 
   const shortCode    = tenant?.school_short_code ?? null
-  const staffPwaUrl  = slug ? `https://${slug}.sychar.co.ke` : null
+  const resolvedSlug = tenant?.slug ?? slug ?? null
+  const staffPwaUrl  = resolvedSlug ? `https://${resolvedSlug}.sychar.co.ke` : null
   const parentPwaUrl = 'https://wazazi.sychar.co.ke'
 
   // ── Step 6: Send welcome SMS ───────────────────────────────────────────────
@@ -151,7 +153,7 @@ export async function POST(req: NextRequest) {
     {
       school_id:         schoolId,
       school_short_code: shortCode,
-      slug:              slug ?? null,
+      slug:              resolvedSlug,
       staff_pwa_url:     staffPwaUrl,
       parent_pwa_url:    parentPwaUrl,
       temp_password:     tempPassword,
