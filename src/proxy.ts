@@ -165,9 +165,9 @@ function withHeaders(req: NextRequest, extra: Record<string, string>): NextRespo
   return res
 }
 
-// ── Middleware ────────────────────────────────────────────────────────────────
+// ── Proxy ─────────────────────────────────────────────────────────────────────
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   try {
     const { pathname } = request.nextUrl
 
@@ -234,8 +234,8 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(new URL('/suspended', request.url))
     }
 
-    // 8. /super/* — super_admin only
-    if (pathname.startsWith('/super/')) {
+    // 8. /super/* and /admin/* — super_admin only
+    if (pathname.startsWith('/super/') || pathname.startsWith('/admin')) {
       if (subRole !== 'super_admin') {
         return NextResponse.redirect(new URL(subRole ? dashboardFor(subRole) : '/login', request.url))
       }
@@ -272,7 +272,7 @@ export async function middleware(request: NextRequest) {
   }
 }
 
-export const config = {
+export const proxyConfig = {
   matcher: [
     '/((?!_next/static|_next/image|favicon\\.ico).*)',
   ],

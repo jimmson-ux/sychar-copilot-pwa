@@ -26,8 +26,8 @@ export const viewport: Viewport = {
 }
 
 export const metadata: Metadata = {
-  title: 'Sychar Copilot | Nkoroi Senior Secondary School',
-  description: 'AI-powered school management for Nkoroi Mixed Senior Secondary School, Ongata Rongai, Kajiado County',
+  title: { default: 'Sychar Copilot', template: '%s | Sychar Copilot' },
+  description: 'AI-powered school management system',
   applicationName: 'Sychar Copilot',
   appleWebApp: {
     capable: true,
