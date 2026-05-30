@@ -4,6 +4,7 @@ import './globals.css'
 import InstallPrompt from '@/components/InstallPrompt'
 import NotificationSoundBridge from '@/components/NotificationSoundBridge'
 import { SchoolThemeProvider } from '@/components/providers/SchoolThemeProvider'
+import { AnalyticsProvider } from './providers'
 
 const spaceGrotesk = Space_Grotesk({
   subsets: ['latin'],
@@ -108,7 +109,9 @@ export default function RootLayout({
       </head>
       <body className={`${spaceGrotesk.variable} ${dmSans.variable}`} style={{ fontFamily: 'var(--font-dm-sans), DM Sans, system-ui, sans-serif' }}>
         <SchoolThemeProvider>
-          {children}
+          <AnalyticsProvider>
+            {children}
+          </AnalyticsProvider>
           <InstallPrompt />
           <NotificationSoundBridge />
         </SchoolThemeProvider>

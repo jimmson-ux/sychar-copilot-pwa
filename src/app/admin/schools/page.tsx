@@ -102,30 +102,6 @@ function Toggle({
   )
 }
 
-// ── New-school form state type ────────────────────────────────
-
-type NewSchoolForm = {
-  name:          string
-  county:        string
-  sub_county:    string
-  knec_code:     string
-  student_count: string
-  contact_name:  string
-  contact_phone: string
-  contact_email: string
-}
-
-const EMPTY_FORM: NewSchoolForm = {
-  name:          '',
-  county:        '',
-  sub_county:    '',
-  knec_code:     '',
-  student_count: '',
-  contact_name:  '',
-  contact_phone: '',
-  contact_email: '',
-}
-
 type FilterMode = 'all' | 'active' | 'suspended'
 
 // ─────────────────────────────────────────────────────────────
@@ -137,12 +113,9 @@ export default function AdminSchoolsPage() {
   const [pricing,        setPricing]        = useState<GlobalPricing | null>(null)
   const [loading,        setLoading]        = useState(true)
   const [selectedSchool, setSelectedSchool] = useState<School | null>(null)
-  const [showAddModal,   setShowAddModal]   = useState(false)
   const [search,         setSearch]         = useState('')
   const [filter,         setFilter]         = useState<FilterMode>('all')
   const [saving,         setSaving]         = useState<string | null>(null)
-  const [form,           setForm]           = useState<NewSchoolForm>(EMPTY_FORM)
-  const [submitting,     setSubmitting]     = useState(false)
 
   // ── Data fetch ──────────────────────────────────────────────
   async function fetchData() {
@@ -217,37 +190,6 @@ export default function AdminSchoolsPage() {
     setSaving(null)
   }
 
-  // ── Add school ──────────────────────────────────────────────
-  async function handleAddSchool(e: React.FormEvent) {
-    e.preventDefault()
-    setSubmitting(true)
-    const supabase = createClient()
-    const { error } = await supabase.from('schools').insert({
-      name:          form.name.trim(),
-      county:        form.county.trim(),
-      sub_county:    form.sub_county.trim()    || null,
-      knec_code:     form.knec_code.trim()     || null,
-      student_count: parseInt(form.student_count) || 0,
-      contact_name:  form.contact_name.trim()  || null,
-      contact_phone: form.contact_phone.trim() || null,
-      contact_email: form.contact_email.trim() || null,
-      features: {
-        gate_pass:        false,
-        visitor_log:      false,
-        staff_attendance: false,
-        pocket_money:     false,
-        bread_voucher:    false,
-      },
-      is_active: true,
-    })
-    if (!error) {
-      setShowAddModal(false)
-      setForm(EMPTY_FORM)
-      await fetchData()
-    }
-    setSubmitting(false)
-  }
-
   // ── Derived state ───────────────────────────────────────────
   const filteredSchools = schools
     .filter(s => {
@@ -301,23 +243,6 @@ export default function AdminSchoolsPage() {
             <span>{schools.length} total</span>
           </p>
         </div>
-        <button
-          onClick={() => setShowAddModal(true)}
-          style={{
-            background:   C.accent,
-            color:        '#fff',
-            border:       'none',
-            borderRadius: 8,
-            padding:      '10px 20px',
-            fontFamily:   FONT_DISPLAY,
-            fontWeight:   600,
-            fontSize:     13,
-            cursor:       'pointer',
-            letterSpacing:'0.01em',
-          }}
-        >
-          + Onboard School
-        </button>
       </div>
 
       {/* ── Filter bar ─────────────────────────────────────── */}
@@ -779,211 +704,6 @@ export default function AdminSchoolsPage() {
         )}
       </div>
 
-      {/* ─────────────────────────────────────────────────────
-          Add School Modal
-      ───────────────────────────────────────────────────── */}
-      {showAddModal && (
-        <div
-          onClick={() => { setShowAddModal(false); setForm(EMPTY_FORM) }}
-          style={{
-            position:   'fixed',
-            inset:      0,
-            background: 'rgba(0,0,0,0.75)',
-            zIndex:     100,
-            display:    'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding:    20,
-          }}
-        >
-          <div
-            onClick={e => e.stopPropagation()}
-            style={{
-              background:   C.surface,
-              border:       `1px solid ${C.borderStr}`,
-              borderRadius: 14,
-              width:        '100%',
-              maxWidth:     520,
-              maxHeight:    '90vh',
-              overflowY:    'auto',
-              padding:      28,
-            }}
-          >
-            {/* Modal header */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 22 }}>
-              <div>
-                <h2 style={{ fontFamily: FONT_DISPLAY, fontWeight: 800, fontSize: 18, color: C.text, margin: 0 }}>
-                  Onboard School
-                </h2>
-                <p style={{ fontFamily: FONT_MONO, fontSize: 10, color: C.muted, margin: '5px 0 0', letterSpacing: '0.06em' }}>
-                  All add-ons default OFF — enable per-school after creation
-                </p>
-              </div>
-              <button
-                onClick={() => { setShowAddModal(false); setForm(EMPTY_FORM) }}
-                style={{ background: 'transparent', border: 'none', color: C.muted, fontSize: 20, cursor: 'pointer', padding: 0 }}
-              >
-                ×
-              </button>
-            </div>
-
-            <form onSubmit={handleAddSchool} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-
-              {/* School Name — full width */}
-              <div>
-                <label style={{ display: 'block', fontFamily: FONT_MONO, fontSize: 10, color: C.dim, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 5 }}>
-                  School Name *
-                </label>
-                <input
-                  required
-                  value={form.name}
-                  onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
-                  placeholder="e.g. Nkoroi Mixed Secondary"
-                  style={inputStyle}
-                />
-              </div>
-
-              {/* County + Sub-County */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                <div>
-                  <label style={{ display: 'block', fontFamily: FONT_MONO, fontSize: 10, color: C.dim, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 5 }}>
-                    County *
-                  </label>
-                  <input
-                    required
-                    value={form.county}
-                    onChange={e => setForm(p => ({ ...p, county: e.target.value }))}
-                    placeholder="e.g. Kajiado"
-                    style={inputStyle}
-                  />
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontFamily: FONT_MONO, fontSize: 10, color: C.dim, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 5 }}>
-                    Sub-County
-                  </label>
-                  <input
-                    value={form.sub_county}
-                    onChange={e => setForm(p => ({ ...p, sub_county: e.target.value }))}
-                    placeholder="e.g. Ngong"
-                    style={inputStyle}
-                  />
-                </div>
-              </div>
-
-              {/* KNEC Code + Student Count */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                <div>
-                  <label style={{ display: 'block', fontFamily: FONT_MONO, fontSize: 10, color: C.dim, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 5 }}>
-                    KNEC Code
-                  </label>
-                  <input
-                    value={form.knec_code}
-                    onChange={e => setForm(p => ({ ...p, knec_code: e.target.value }))}
-                    placeholder="e.g. 10234001"
-                    style={inputStyle}
-                  />
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontFamily: FONT_MONO, fontSize: 10, color: C.dim, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 5 }}>
-                    Student Count
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={form.student_count}
-                    onChange={e => setForm(p => ({ ...p, student_count: e.target.value }))}
-                    placeholder="e.g. 1200"
-                    style={inputStyle}
-                  />
-                </div>
-              </div>
-
-              {/* Principal Name — full width */}
-              <div>
-                <label style={{ display: 'block', fontFamily: FONT_MONO, fontSize: 10, color: C.dim, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 5 }}>
-                  Principal Name
-                </label>
-                <input
-                  value={form.contact_name}
-                  onChange={e => setForm(p => ({ ...p, contact_name: e.target.value }))}
-                  placeholder="e.g. Mr. James Mwangi"
-                  style={inputStyle}
-                />
-              </div>
-
-              {/* Phone + Email */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                <div>
-                  <label style={{ display: 'block', fontFamily: FONT_MONO, fontSize: 10, color: C.dim, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 5 }}>
-                    Phone
-                  </label>
-                  <input
-                    type="tel"
-                    value={form.contact_phone}
-                    onChange={e => setForm(p => ({ ...p, contact_phone: e.target.value }))}
-                    placeholder="+254 7XX XXX XXX"
-                    style={inputStyle}
-                  />
-                </div>
-                <div>
-                  <label style={{ display: 'block', fontFamily: FONT_MONO, fontSize: 10, color: C.dim, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 5 }}>
-                    Email
-                  </label>
-                  <input
-                    type="email"
-                    value={form.contact_email}
-                    onChange={e => setForm(p => ({ ...p, contact_email: e.target.value }))}
-                    placeholder="principal@school.ac.ke"
-                    style={inputStyle}
-                  />
-                </div>
-              </div>
-
-              {/* Divider */}
-              <div style={{ borderTop: `1px solid ${C.borderSub}`, marginTop: 4 }} />
-
-              {/* Submit */}
-              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-                <button
-                  type="button"
-                  onClick={() => { setShowAddModal(false); setForm(EMPTY_FORM) }}
-                  style={{
-                    padding:    '10px 20px',
-                    borderRadius: 7,
-                    border:     `1px solid ${C.borderStr}`,
-                    background: 'transparent',
-                    color:      C.muted,
-                    fontFamily: FONT_DISPLAY,
-                    fontSize:   13,
-                    cursor:     'pointer',
-                  }}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  style={{
-                    padding:    '10px 24px',
-                    borderRadius: 7,
-                    border:     'none',
-                    background: submitting ? C.dim : C.accent,
-                    color:      '#fff',
-                    fontFamily: FONT_DISPLAY,
-                    fontWeight: 600,
-                    fontSize:   13,
-                    cursor:     submitting ? 'not-allowed' : 'pointer',
-                    transition: 'background 0.15s',
-                  }}
-                >
-                  {submitting ? 'Creating…' : 'Create School'}
-                </button>
-              </div>
-
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
