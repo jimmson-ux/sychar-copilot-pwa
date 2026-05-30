@@ -1,5 +1,4 @@
 import { Receiver } from "@upstash/qstash";
-import { tasks } from "@trigger.dev/sdk/v3";
 import { NextResponse } from "next/server";
 
 async function verifyQStash(req: Request, body: string): Promise<void> {
@@ -36,11 +35,16 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "school_id is required" }, { status: 400 });
     }
 
-    const handle = await tasks.trigger("school-onboarding", {
-      school_id,
-      school_name: school_name ?? "",
-      admin_email: admin_email ?? "",
+    const res = await fetch("https://api.trigger.dev/api/v3/tasks/school-onboarding/trigger", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ payload: { school_id, school_name: school_name ?? "", admin_email: admin_email ?? "" } }),
     });
+    if (!res.ok) {
+      const err = await res.text();
+      return NextResponse.json({ error: `Trigger.dev: ${err}` }, { status: 502 });
+    }
+    const handle = await res.json() as { id: string };
 
     return NextResponse.json({ ok: true, run_id: handle.id });
   } catch (err: unknown) {
