@@ -20,12 +20,10 @@ export function initClarity(clarityId: string) {
   document.head.appendChild(s);
 }
 
-export function initFormbricks(environmentId: string) {
-  if (!environmentId || typeof window === "undefined") return;
-  import("@formbricks/js").then(({ formbricks }) => {
-    formbricks.init({
-      environmentId,
-      apiHost: "https://app.formbricks.com",
-    });
+export function initFormbricks(workspaceId: string) {
+  if (!workspaceId || typeof window === "undefined") return;
+  import("@formbricks/js").then((mod) => {
+    const fb = (mod as any).default ?? (mod as any).formbricks;
+    fb.setup({ workspaceId, appUrl: "https://app.formbricks.com" });
   }).catch(() => {});
 }

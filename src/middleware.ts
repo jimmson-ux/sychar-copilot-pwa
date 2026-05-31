@@ -165,9 +165,9 @@ function withHeaders(req: NextRequest, extra: Record<string, string>): NextRespo
   return res
 }
 
-// ── Proxy ─────────────────────────────────────────────────────────────────────
+// ── Middleware ────────────────────────────────────────────────────────────────
 
-export async function proxy(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   try {
     const { pathname } = request.nextUrl
 
@@ -272,7 +272,7 @@ export async function proxy(request: NextRequest) {
   }
 }
 
-export const proxyConfig = {
+export const config = {
   matcher: [
     '/((?!_next/static|_next/image|favicon\\.ico).*)',
   ],

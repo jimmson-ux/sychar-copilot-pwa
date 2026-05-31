@@ -6,7 +6,7 @@ export function AnalyticsProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     initAnalytics();
     initClarity(process.env.NEXT_PUBLIC_CLARITY_ID ?? '');
-    initFormbricks(process.env.NEXT_PUBLIC_FORMBRICKS_ENV_ID ?? '');
+    initFormbricks(process.env.NEXT_PUBLIC_FORMBRICKS_WORKSPACE_ID ?? '');
   }, []);
   return <>{children}</>;
 }
