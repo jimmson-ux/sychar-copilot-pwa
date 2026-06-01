@@ -1,0 +1,30 @@
+name: CI
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      # TYPE DEBT: this repo currently has ~404 pre-existing tsc errors and
+      # next.config sets typescript.ignoreBuildErrors. The strict type gate is
+      # therefore informational (non-blocking) until that debt is burned down
+      # and ignoreBuildErrors is removed. Track: tighten this to a hard gate.
+      - name: Typecheck (informational — see TYPE DEBT note)
+        continue-on-error: true
+        run: NODE_OPTIONS=--max-old-space-size=8192 npx tsc --noEmit
+      # Hard gate: the build must succeed (catches route/import/syntax errors).
+      # Requires NEXT_PUBLIC_* repo secrets for the canonical Supabase project.
+      - name: Build
+        run: npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
