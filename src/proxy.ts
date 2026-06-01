@@ -1,21 +1,21 @@
 /**
- * Edge middleware — auth gate, tenant resolution, role routing.
+ * Proxy (Next.js 16 — formerly `middleware.ts`). Auth gate + role routing.
  *
- * Auth strategy (no DB calls — all cookie-based for speed):
+ * Auth strategy (no DB calls on the hot path — all cookie-based for speed):
  *   - Session gate : reads Supabase auth cookie directly
  *   - Role routing : reads `sychar-role` cookie (set by /login after sign-in)
  *   - Subscription : reads `sychar-sub` cookie  (set by /login; defaults 'active')
  *
- * Tenant resolution (subdomain → school_id):
- *   - Extracts slug from subdomain: nkoroi.sychar.co.ke → 'nkoroi'
- *   - Fetches tenant_configs via Supabase REST (Cloudflare-cached 5 min)
- *   - Injects x-school-id, x-school-slug, x-school-name, x-school-short-code headers
+ * Tenant resolution (subdomain → school): the slug is extracted from the
+ * subdomain (nkoroi.sychar.co.ke → 'nkoroi') and used to (a) reject unknown
+ * subdomains and (b) carry school context into /login. NOTE: we intentionally
+ * do NOT inject x-school-* request headers — no route consumes them. Per-tenant
+ * data scoping is enforced downstream by Postgres RLS (school_id) +
+ * requireAuth()/staff_records.school_id in every API route, which is the real
+ * security boundary. Role/sub cookies here are routing hints only.
  *
- * Parent PWA (/parent/*, /api/parent/*) — always passes through.
- * Parent JWT is verified per-route by requireParentAuth().
- *
- * Role/sub cookies are routing hints only — not a security boundary.
- * Actual authorization is enforced by RLS + requireAuth() in every API route.
+ * Parent PWA (/parent/*, /api/parent/*) — always passes through; the parent JWT
+ * is verified per-route by requireParentAuth().
  */
 
 import { NextResponse } from 'next/server'
@@ -136,38 +136,30 @@ function extractSlug(req: NextRequest): string | null {
   return devSlug ?? null
 }
 
-async function resolveTenant(slug: string): Promise<Record<string, string> | null> {
+/** Returns true if the slug maps to a known tenant (Cloudflare-cached 5 min). */
+async function tenantExists(slug: string): Promise<boolean> {
   const supabaseAnon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ''
-  if (!SUPABASE_URL || !supabaseAnon) return null
+  if (!SUPABASE_URL || !supabaseAnon) return false
   try {
     const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/tenant_configs?slug=eq.${encodeURIComponent(slug)}&select=school_id,name,slug,school_short_code&limit=1`,
+      `${SUPABASE_URL}/rest/v1/tenant_configs?slug=eq.${encodeURIComponent(slug)}&select=school_id&limit=1`,
       {
         headers: { apikey: supabaseAnon, Authorization: `Bearer ${supabaseAnon}`, 'Accept-Profile': 'public' },
         // @ts-ignore cf is Cloudflare-specific
         cf: { cacheTtl: 300, cacheEverything: true },
       }
     )
-    if (!res.ok) return null
-    const tenants = await res.json() as Record<string, string>[]
-    return tenants[0] ?? null
+    if (!res.ok) return false
+    const tenants = await res.json() as unknown[]
+    return tenants.length > 0
   } catch {
-    return null
+    return false
   }
 }
 
-function withHeaders(req: NextRequest, extra: Record<string, string>): NextResponse {
-  if (!Object.keys(extra).length) return NextResponse.next()
-  const reqHeaders = new Headers(req.headers)
-  Object.entries(extra).forEach(([k, v]) => reqHeaders.set(k, v))
-  const res = NextResponse.next({ request: { headers: reqHeaders } })
-  Object.entries(extra).forEach(([k, v]) => res.headers.set(k, v))
-  return res
-}
+// ── Proxy ───────────────────────────────────────────────────────────────────
 
-// ── Middleware ────────────────────────────────────────────────────────────────
-
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   try {
     const { pathname } = request.nextUrl
 
@@ -180,25 +172,21 @@ export async function middleware(request: NextRequest) {
       return NextResponse.next()
     }
 
-    // 2. Tenant resolution from subdomain slug
-    const slug         = extractSlug(request)
-    const extraHeaders: Record<string, string> = {}
-
-    if (slug) {
-      const tenant = await resolveTenant(slug)
-      if (tenant) {
-        extraHeaders['x-school-id']         = tenant.school_id         ?? ''
-        extraHeaders['x-school-slug']       = tenant.slug              ?? ''
-        extraHeaders['x-school-name']       = tenant.name              ?? ''
-        extraHeaders['x-school-short-code'] = tenant.school_short_code ?? ''
-      } else if (!pathname.startsWith('/api/') && !pathname.startsWith('/parent/')) {
-        return NextResponse.redirect(new URL('https://sychar.co.ke'))
-      }
+    // 2. Tenant resolution from subdomain slug — reject unknown subdomains
+    //    (no x-school-* headers are injected; RLS + requireAuth() scope data).
+    const slug = extractSlug(request)
+    if (
+      slug &&
+      !pathname.startsWith('/api/') &&
+      !pathname.startsWith('/parent/') &&
+      !(await tenantExists(slug))
+    ) {
+      return NextResponse.redirect(new URL('https://sychar.co.ke'))
     }
 
     // 3. Parent PWA — always pass through (JWT verified per-route)
     if (pathname.startsWith('/parent/') || pathname.startsWith('/api/parent/')) {
-      return withHeaders(request, extraHeaders)
+      return NextResponse.next()
     }
 
     // 4. Public paths
@@ -210,12 +198,12 @@ export async function middleware(request: NextRequest) {
       if (loggedIn && subRole && pathname === '/login') {
         return NextResponse.redirect(new URL(dashboardFor(subRole), request.url))
       }
-      return withHeaders(request, extraHeaders)
+      return NextResponse.next()
     }
 
     // 5. API routes — auth handled by requireAuth() in each handler
     if (pathname.startsWith('/api/')) {
-      return withHeaders(request, extraHeaders)
+      return NextResponse.next()
     }
 
     // 6. Unauthenticated → /login
@@ -229,7 +217,7 @@ export async function middleware(request: NextRequest) {
     // 7. Frozen / suspended → /suspended
     if (subStatus === 'suspended' || subStatus === 'frozen') {
       if (subRole === 'principal' && pathname.startsWith('/dashboard/principal')) {
-        return withHeaders(request, extraHeaders)
+        return NextResponse.next()
       }
       return NextResponse.redirect(new URL('/suspended', request.url))
     }
@@ -239,7 +227,7 @@ export async function middleware(request: NextRequest) {
       if (subRole !== 'super_admin') {
         return NextResponse.redirect(new URL(subRole ? dashboardFor(subRole) : '/login', request.url))
       }
-      return withHeaders(request, extraHeaders)
+      return NextResponse.next()
     }
 
     // 9. /dashboard root → role-based entry redirect
@@ -260,14 +248,14 @@ export async function middleware(request: NextRequest) {
     }
 
     // 11. Grace period → pass through with banner header
-    const res = withHeaders(request, extraHeaders)
+    const res = NextResponse.next()
     if (subStatus === 'grace_period') {
       res.headers.set('x-subscription-status', 'grace_period')
     }
     return res
 
   } catch (err) {
-    console.error('[middleware] error:', err)
+    console.error('[proxy] error:', err)
     return NextResponse.next()
   }
 }
