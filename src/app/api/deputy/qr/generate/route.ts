@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/requireAuth'
 import { createAdminSupabaseClient } from '@/lib/supabase-server'
-import { createHmac, timingSafeEqual } from 'crypto'
+import { createHmac } from 'crypto'
 
 export const dynamic = 'force-dynamic'
 
@@ -171,6 +171,3 @@ export async function GET(_req: NextRequest) {
 
   return NextResponse.json({ tokens: data ?? [] })
 }
-
-// Export for use in scan route verification
-export { buildToken, timingSafeEqual }

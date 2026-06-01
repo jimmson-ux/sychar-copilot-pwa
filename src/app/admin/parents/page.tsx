@@ -100,7 +100,7 @@ export default function AdminParentsPage() {
     setLoading(true)
     try {
       const d = await fetch('/api/admin/platform/parents').then(r => r.json())
-      setData(d)
+      setData(d as ParentsData)
     } finally {
       setLoading(false)
     }

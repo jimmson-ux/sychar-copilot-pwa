@@ -9,7 +9,7 @@ import { requireAuth } from '@/lib/requireAuth'
 import { createAdminSupabaseClient } from '@/lib/supabase-server'
 import { jwtVerify } from 'jose'
 
-export const CHECKIN_ERRORS = {
+const CHECKIN_ERRORS = {
   INVALID_QR:        { code: 'INVALID_QR',        message: 'QR code is invalid or corrupted',            retryable: false },
   WRONG_SCHOOL:      { code: 'WRONG_SCHOOL',       message: 'This QR code is for a different school',    retryable: false },
   WRONG_PURPOSE:     { code: 'WRONG_PURPOSE',      message: 'This QR code is not for teacher check-in',  retryable: false },

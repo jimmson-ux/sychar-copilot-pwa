@@ -179,7 +179,7 @@ function SchoolDetailPanel({ school, onClose }: { school: SchoolBrief; onClose: 
     setLoading(true)
     fetch(`/api/admin/platform/school/${school.id}`)
       .then(r => r.json())
-      .then(d => { setDetail(d); setLoading(false) })
+      .then(d => { setDetail(d as SchoolDetail); setLoading(false) })
       .catch(() => setLoading(false))
   }, [school.id])
 
@@ -191,7 +191,7 @@ function SchoolDetailPanel({ school, onClose }: { school: SchoolBrief; onClose: 
       body:    JSON.stringify({ staffId, patch }),
     })
     const fresh = await fetch(`/api/admin/platform/school/${school.id}`).then(r => r.json())
-    setDetail(fresh)
+    setDetail(fresh as SchoolDetail)
     setSaving(null)
   }
 
@@ -444,7 +444,7 @@ export default function PlatformOverviewPage() {
     setLoading(true)
     try {
       const data = await fetch('/api/admin/platform/overview').then(r => r.json())
-      setOverview(data)
+      setOverview(data as Overview)
     } finally {
       setLoading(false)
     }
