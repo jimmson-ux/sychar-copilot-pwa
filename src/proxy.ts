@@ -136,22 +136,27 @@ function extractSlug(req: NextRequest): string | null {
   return devSlug ?? null
 }
 
-/** Returns true if the slug maps to a known tenant (Cloudflare-cached 5 min). */
+/** Returns true if the slug maps to a known tenant (Cloudflare-cached 5 min).
+ *  Uses the get_tenant_by_slug RPC (returns safe columns only) — anon no longer
+ *  has direct SELECT on tenant_configs, which holds secrets. */
 async function tenantExists(slug: string): Promise<boolean> {
   const supabaseAnon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? ''
   if (!SUPABASE_URL || !supabaseAnon) return false
   try {
-    const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/tenant_configs?slug=eq.${encodeURIComponent(slug)}&select=school_id&limit=1`,
-      {
-        headers: { apikey: supabaseAnon, Authorization: `Bearer ${supabaseAnon}`, 'Accept-Profile': 'public' },
-        // @ts-ignore cf is Cloudflare-specific
-        cf: { cacheTtl: 300, cacheEverything: true },
-      }
-    )
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_tenant_by_slug`, {
+      method: 'POST',
+      headers: {
+        apikey: supabaseAnon,
+        Authorization: `Bearer ${supabaseAnon}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ p_slug: slug }),
+      // @ts-ignore cf is Cloudflare-specific
+      cf: { cacheTtl: 300, cacheEverything: true },
+    })
     if (!res.ok) return false
-    const tenants = await res.json() as unknown[]
-    return tenants.length > 0
+    const tenants = (await res.json()) as unknown[]
+    return Array.isArray(tenants) && tenants.length > 0
   } catch {
     return false
   }
