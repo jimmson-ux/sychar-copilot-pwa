@@ -302,7 +302,7 @@ async function handleSchoolFees(
   await svc.rpc('update_fee_balance_on_payment', {
     p_student_id: studentId,
     p_amount:     amount,
-  }).then(() => {}).catch(async () => {
+  }).then(() => {}, async () => {
     // Fallback: direct update for either column name
     await svc
       .from('fee_balances')

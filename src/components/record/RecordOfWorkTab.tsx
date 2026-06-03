@@ -55,7 +55,7 @@ export default function RecordOfWorkTab({ token, className, subjectName, labels 
       })
 
       if (!res.ok) {
-        const d = await res.json()
+        const d: any = await res.json()
         setError(d.error ?? 'Failed to save')
       } else {
         setSaved(true)

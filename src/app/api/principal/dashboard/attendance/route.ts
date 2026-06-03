@@ -39,7 +39,7 @@ async function fetchTodayData(svc: ReturnType<typeof createAdminSupabaseClient>,
     svc.from('schools').select('name').eq('id', schoolId).single(),
   ])
 
-  const allScans = (scans ?? []) as Array<{
+  const allScans = (scans ?? []) as unknown as Array<{
     id: string; teacher_name: string; class_name: string; subject: string
     status: string; late_minutes: number; expected_start: string; expected_end: string
     scanned_at: string; last_heartbeat_at: string | null; left_early_minutes: number | null

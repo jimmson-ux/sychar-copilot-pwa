@@ -130,7 +130,7 @@ export async function POST(req: NextRequest) {
           amount:           allocation,
           transaction_ref:  row.ref ?? null,
           transaction_date: row.date ?? null,
-        }).catch(() => null)
+        }).then(undefined, () => null)
 
         breakdown.push({ category: inv.category_name, amount: allocation })
         remaining -= allocation
@@ -154,7 +154,7 @@ export async function POST(req: NextRequest) {
       unmatched:    results.filter((r) => r.allocated === 0).length,
       total_credit: body.rows.reduce((s, r) => s + (r.amount || 0), 0),
       allocated:    totalAllocated,
-    }).eq('id', importId).catch(() => null)
+    }).eq('id', importId).then(undefined, () => null)
   }
 
   return NextResponse.json({ ok: true, results, totalAllocated, importId })

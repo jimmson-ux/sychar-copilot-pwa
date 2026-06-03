@@ -144,7 +144,7 @@ export async function POST(req: NextRequest) {
       student_id:    match?.student.id ?? null,
       student_name:  match?.student.full_name ?? null,
       admission_no:  match?.student.admission_no ?? null,
-      class_name:    match?.student.class_name ?? null,
+      class_name:    (match?.student as { class_name?: string | null } | undefined)?.class_name ?? null,
       confidence:    match?.confidence ?? 0,
       match_method:  match?.method ?? 'none',
       status: credit > 0 && match ? 'matched' : credit > 0 ? 'unmatched' : 'skip',

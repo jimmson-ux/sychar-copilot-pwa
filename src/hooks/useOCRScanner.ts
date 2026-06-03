@@ -80,7 +80,7 @@ export function useOCRScanner() {
             userId: session?.user?.id,
           }),
         })
-        const fallbackData = await res.json()
+        const fallbackData: any = await res.json()
         if (!fallbackData.success) throw new Error(fallbackData.error || 'OCR failed')
         const ocr: OCRResult = { ...fallbackData, task }
         setResult(ocr)

@@ -133,7 +133,7 @@ export default function ExamPerformanceTab({ token, className, subjectName, stud
           shareWithHod,
         }),
       })
-      const d = await res.json()
+      const d: any = await res.json()
       if (!res.ok) setError(d.error ?? 'Failed to generate guide')
       else setGuide(d.guide)
     } catch { setError('Network error') }

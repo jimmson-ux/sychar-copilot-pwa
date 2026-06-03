@@ -79,7 +79,7 @@ export default function SchemeOfWorkTab({ token, className, subjectName, labels,
         }),
       })
 
-      const d = await res.json()
+      const d: any = await res.json()
       if (!res.ok) setError(d.error ?? 'Failed to save')
       else {
         setSaved(true)

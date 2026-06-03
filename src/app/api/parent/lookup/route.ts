@@ -129,7 +129,7 @@ export async function GET(req: NextRequest) {
   const fr     = (feeRecords ?? []) as FeeRecRow[]
   const sc     = schoolRow  as SchoolRow | null
   const attend = (attendance ?? []) as AttendRow[]
-  const mks    = (marks ?? []) as MarkRow[]
+  const mks    = (marks ?? []) as unknown as MarkRow[]
   const nts    = (notices ?? []) as NoticeRow[]
 
   const present  = attend.filter(r => r.status === 'present').length

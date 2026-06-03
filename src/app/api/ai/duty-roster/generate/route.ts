@@ -282,7 +282,7 @@ export async function POST(req: NextRequest) {
         model:     google('gemini-2.0-flash'),
         prompt,
         schema:    DutyRosterSchema,
-        maxTokens: 4000,
+        maxOutputTokens: 4000,
       })
       result = object as z.infer<typeof DutyRosterSchema>
     } catch (err) {

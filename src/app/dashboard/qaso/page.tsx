@@ -375,13 +375,16 @@ function MoeNotices({ db }: { db: ReturnType<typeof getDb> }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    db.from('document_inbox')
-      .select('id, title, created_at, applied')
-      .order('created_at', { ascending: false })
-      .limit(30)
-      .then(({ data }) => setNotices((data ?? []) as typeof notices))
-      .catch(() => {})
-      .finally(() => setLoading(false))
+    void (async () => {
+      try {
+        const { data } = await db.from('document_inbox')
+          .select('id, title, created_at, applied')
+          .order('created_at', { ascending: false })
+          .limit(30)
+        setNotices((data ?? []) as typeof notices)
+      } catch { /* ignore */ }
+      finally { setLoading(false) }
+    })()
   }, [])
 
   if (loading) return <div className="space-y-2">{[...Array(4)].map((_, i) => <div key={i} className="h-10 bg-gray-100 rounded animate-pulse" />)}</div>

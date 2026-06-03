@@ -65,7 +65,7 @@ export default function TimetableViewTab({ token, teacherId, schoolId }: Timetab
         `/api/teacher/timetable?token=${encodeURIComponent(token)}&teacherId=${encodeURIComponent(teacherId)}&schoolId=${encodeURIComponent(schoolId)}`
       )
       if (res.ok) {
-        const data = await res.json()
+        const data: any = await res.json()
         const entries = data.timetable ?? []
         setTimetable(entries)
         setLastUpdated(new Date())

@@ -34,7 +34,7 @@ export function usePTAVoting(schoolId: string | null, token: string | null) {
     setState('loading')
     try {
       const res  = await fetch(`/api/pta/ballots?schoolId=${schoolId}`, { headers })
-      const json = await res.json()
+      const json: any = await res.json()
       if (!res.ok || !json.ballot) { setState('idle'); return }
 
       setBallot(json.ballot as PTABallot)
@@ -57,7 +57,7 @@ export function usePTAVoting(schoolId: string | null, token: string | null) {
         headers,
         body: JSON.stringify({ ballotId: ballot.id, voteChoice }),
       })
-      const json = await res.json()
+      const json: any = await res.json()
       if (!res.ok) {
         setState(res.status === 403 ? 'ineligible' : 'error')
         setError(json.error ?? 'Vote failed')

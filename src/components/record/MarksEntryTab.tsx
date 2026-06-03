@@ -67,7 +67,7 @@ export default function MarksEntryTab({ token, className, subjectName, teacherId
       // Fetch fresh from API
       try {
         const res = await fetch(`/api/teacher/students?token=${encodeURIComponent(token)}&className=${encodeURIComponent(className)}`)
-        const data = await res.json()
+        const data: any = await res.json()
         const fresh = data.students ?? []
         setStudents(fresh)
 
