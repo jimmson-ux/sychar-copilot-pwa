@@ -120,6 +120,9 @@ export async function POST(req: NextRequest) {
   if (slug) {
     await db.from('tenant_configs')
       .upsert({ school_id: schoolId, slug }, { onConflict: 'school_id' })
+    // The staff PWA resolves the tenant by schools.subdomain/code/name — set
+    // subdomain to the slug so <slug>.sychar.co.ke resolves (not "School not found").
+    await db.from('schools').update({ subdomain: slug }).eq('id', schoolId)
   }
 
   // ── Step 5: Fetch auto-generated short_code + resolved slug ───────────────
