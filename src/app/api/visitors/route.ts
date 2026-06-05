@@ -136,6 +136,15 @@ export async function POST(req: NextRequest) {
 
   const v = data as { id: string; check_in_time: string }
 
+  // Gate log alert — visible to Teacher-on-Duty / Principal / Deputy (digital visitor book).
+  await db.from('alerts').insert({
+    school_id: auth.schoolId,
+    type:      'visitor_checkin',
+    severity:  'low',
+    title:     `Visitor IN: ${body.visitorName.trim()}${body.idNumber ? ` (ID ${body.idNumber})` : ''} — ${body.purpose.trim()}`,
+    detail:    { visitor_id: v.id, id_number: body.idNumber ?? null, phone: body.phone ?? null, purpose: body.purpose.trim(), host_staff_id: body.hostStaffId ?? null, direction: 'in' },
+  }).then(() => {}, () => {})
+
   // Notify host staff
   if (body.hostStaffId) {
     await db.from('alerts').insert({

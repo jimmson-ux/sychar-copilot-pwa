@@ -57,5 +57,15 @@ export async function PATCH(
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 
+  const out = data as { id: string; full_name: string | null; visitor_name: string | null }
+  // Gate log alert — visitor departure, visible to Teacher-on-Duty / Principal / Deputy.
+  await db.from('alerts').insert({
+    school_id: auth.schoolId,
+    type:      'visitor_checkout',
+    severity:  'low',
+    title:     `Visitor OUT: ${out.full_name ?? out.visitor_name ?? 'Visitor'} departed at ${new Date(now).toLocaleTimeString('en-KE', { hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Nairobi' })}`,
+    detail:    { visitor_id: out.id, direction: 'out' },
+  }).then(() => {}, () => {})
+
   return NextResponse.json({ ok: true, visitor: data })
 }
