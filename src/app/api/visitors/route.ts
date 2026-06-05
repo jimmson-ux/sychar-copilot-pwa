@@ -12,6 +12,58 @@ function svc() {
   return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
 }
 
+// Route a visitor-arrival web push to the right staff by purpose.
+// Gated per-school by tenant_configs.settings.visitor_alerts (Oloolaiser ON, Nkoroi OFF).
+async function notifyVisitorArrival(
+  db: ReturnType<typeof svc>, schoolId: string,
+  v: { visitorId: string; name: string; idNumber?: string | null; purpose: string; visitorType?: string | null; hostStaffId?: string | null },
+) {
+  const { data: tc } = await db.from('tenant_configs').select('settings').eq('school_id', schoolId).maybeSingle()
+  if ((tc as { settings?: { visitor_alerts?: boolean } } | null)?.settings?.visitor_alerts !== true) return
+
+  const purpose = v.purpose.toLowerCase()
+  const type = (v.visitorType ?? '').toLowerCase()
+  const roles = new Set<string>()
+  if (type === 'supplier' || /deliver|supply|stock|goods/.test(purpose)) roles.add('storekeeper')
+  if (/fee|pay|money|bursar|balance|invoice|arrears/.test(purpose)) roles.add('bursar')
+  if (/principal|head ?teacher/.test(purpose)) roles.add('principal')
+  if (/deputy/.test(purpose)) { roles.add('deputy_principal'); roles.add('deputy_principal_admin'); roles.add('deputy_principal_academic') }
+  const routed = roles.size > 0
+
+  const staffIds = new Set<string>()
+  if (roles.size) {
+    const { data } = await db.from('staff_records').select('id').eq('school_id', schoolId).in('sub_role', [...roles]).eq('is_active', true)
+    for (const r of (data ?? []) as { id: string }[]) staffIds.add(r.id)
+  }
+  if (!routed) {
+    // general office visit → current Teacher-on-Duty
+    const today = new Date(new Date().toLocaleString('en-US', { timeZone: 'Africa/Nairobi' })).toISOString().slice(0, 10)
+    const { data: tod } = await db.from('tod_master_schedule').select('assigned_teacher_id')
+      .eq('school_id', schoolId).lte('start_date', today).gte('end_date', today).maybeSingle()
+    const tid = (tod as { assigned_teacher_id?: string } | null)?.assigned_teacher_id
+    if (tid) staffIds.add(tid)
+  }
+  if (v.hostStaffId) staffIds.add(v.hostStaffId)
+  if (!staffIds.size) return
+
+  const base = process.env.NEXT_PUBLIC_SUPABASE_URL!
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY!
+  await fetch(`${base}/functions/v1/send-push`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+    body: JSON.stringify({
+      school_id: schoolId,
+      audience: 'staff',
+      value: [...staffIds],
+      payload: {
+        title: `🚪 Visitor at gate: ${v.name}`,
+        body: `${v.purpose}${v.idNumber ? ` · ID ${v.idNumber}` : ''}. Tap to open the visitor book.`,
+        url: '/visitors', tag: `visitor-${v.visitorId}`, renotify: true,
+      },
+    }),
+  }).catch(() => {})
+}
+
 const VIEW_ROLES = new Set([
   'principal', 'deputy_principal', 'deputy_admin', 'security', 'bursar',
 ])
@@ -166,6 +218,16 @@ export async function POST(req: NextRequest) {
       detail:    { visitor_id: v.id, company: body.company },
     }).then(() => {}, () => {})
   }
+
+  // Role-routed visitor web push (Oloolaiser + future schools; gated by tenant flag).
+  await notifyVisitorArrival(db, auth.schoolId!, {
+    visitorId: v.id,
+    name: body.visitorName.trim(),
+    idNumber: body.idNumber ?? null,
+    purpose: body.purpose.trim(),
+    visitorType: body.visitorType ?? null,
+    hostStaffId: body.hostStaffId ?? null,
+  }).catch(() => {})
 
   return NextResponse.json({ visitorId: v.id, checkInTime: v.check_in_time })
 }
