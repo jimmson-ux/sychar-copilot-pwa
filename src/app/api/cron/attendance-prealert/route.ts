@@ -14,18 +14,22 @@ function svc() {
   })
 }
 
-async function pushParent(school_id: string, student_id: string, name: string) {
+async function pushParent(school_id: string, student_id: string, name: string, boarder: boolean) {
   const secret = process.env.STAFF_JWT_SECRET
   if (!secret) return
   const wazazi = process.env.WAZAZI_BASE_URL ?? 'https://wazazi.sychar.co.ke'
+  // Boarding-aware copy: boarders only reach this path on a reporting day (scope='all').
+  const body = boarder
+    ? `${name} has not yet checked in at the gate for the new term. Please confirm their reporting arrangements with the school.`
+    : `${name} has not scanned in through the gate yet this morning. Please contact the school if they are absent today.`
   await fetch(`${wazazi}/api/internal/push`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${secret}` },
     body: JSON.stringify({
       school_id,
       student_ids: [student_id],
-      title: '⚠️ Sychar • Gate Check',
-      body: `${name} has not scanned in through the gate yet this morning. Please contact the school if they are absent today.`,
+      title: boarder ? '⚠️ Sychar • Reporting Check' : '⚠️ Sychar • Gate Check',
+      body,
       type: 'attendance',
       icon: '/icon-192.png',
       badge: '/icon-192.png',
@@ -35,6 +39,8 @@ async function pushParent(school_id: string, student_id: string, name: string) {
     }),
   }).catch(() => {})
 }
+
+const isBoarder = (s: string | null | undefined) => !!s && s.trim().toLowerCase().startsWith('board')
 
 export async function GET(req: NextRequest) {
   // Vercel cron auth (or manual ?key=) — never run open.
@@ -50,6 +56,14 @@ export async function GET(req: NextRequest) {
   const optedIn = (tenants ?? []).filter((t: any) => t?.settings?.attendance_prealert === true).map((t: any) => t.school_id)
   if (!optedIn.length) return NextResponse.json({ ok: true, schools: 0, alerted: 0 })
 
+  // Per-school scope: 'day' (default) alerts only day scholars (boarders live on campus and
+  // don't gate-scan each morning — alerting them daily = false alarms); 'all' = reporting day,
+  // include boarders too. Set tenant_configs.settings.attendance_prealert_scope = 'all' on
+  // reporting days for boarding schools like Oloolaiser.
+  const scopeOf = new Map<string, string>(
+    (tenants ?? []).map((t: any) => [t.school_id, t?.settings?.attendance_prealert_scope ?? 'day']),
+  )
+
   let alerted = 0
   for (const school_id of optedIn) {
     const { data: enr } = await db.from('biometric_enrollments')
@@ -64,9 +78,12 @@ export async function GET(req: NextRequest) {
     const missing = enrolledIds.filter((id) => !checkedIn.has(id))
     if (!missing.length) continue
 
-    const { data: studs } = await db.from('students').select('id, full_name').in('id', missing).eq('is_active', true)
+    const { data: studs } = await db.from('students').select('id, full_name, boarding_status').in('id', missing).eq('is_active', true)
+    const includeBoarders = scopeOf.get(school_id) === 'all'
     for (const s of (studs ?? []) as any[]) {
-      await pushParent(school_id, s.id, s.full_name ?? 'Your child')
+      const boarder = isBoarder(s.boarding_status)
+      if (boarder && !includeBoarders) continue   // skip resident boarders on ordinary days
+      await pushParent(school_id, s.id, s.full_name ?? 'Your child', boarder)
       alerted++
     }
   }
