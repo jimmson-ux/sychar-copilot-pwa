@@ -6,7 +6,8 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest } from 'next/server'
-import { svc, resolveDevice, processScans, parseAttlog } from '@/lib/biometric'
+import { after } from 'next/server'
+import { svc, resolveDevice, processScans, parseAttlog, applyPresenceAndPush } from '@/lib/biometric'
 
 function ok(text = 'OK') {
   return new Response(text, { status: 200, headers: { 'Content-Type': 'text/plain' } })
@@ -45,7 +46,11 @@ export async function POST(req: NextRequest) {
 
   try {
     const scans = parseAttlog(body)
-    if (scans.length) await processScans(db, sn, device.school_id, scans)
+    if (scans.length) {
+      const { studentEvents } = await processScans(db, sn, device.school_id, scans)
+      // Presence + parent push happen after the device gets "OK" — never block the gate.
+      if (studentEvents.length) after(() => applyPresenceAndPush(db, device.school_id, studentEvents))
+    }
   } catch (e) {
     console.error('[iclock/cdata] process error:', (e as Error).message)
   }

@@ -5,7 +5,8 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
-import { svc, resolveDevice, processScans, type RawScan } from '@/lib/biometric'
+import { after } from 'next/server'
+import { svc, resolveDevice, processScans, applyPresenceAndPush, type RawScan } from '@/lib/biometric'
 
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null) as
@@ -31,8 +32,9 @@ export async function POST(req: NextRequest) {
   if (!scans.length) return NextResponse.json({ error: 'no scans' }, { status: 400 })
 
   try {
-    const res = await processScans(db, body.serial, device.school_id, scans)
-    return NextResponse.json({ ok: true, ...res })
+    const { logged, studentEvents } = await processScans(db, body.serial, device.school_id, scans)
+    if (studentEvents.length) after(() => applyPresenceAndPush(db, device.school_id, studentEvents))
+    return NextResponse.json({ ok: true, logged })
   } catch (e) {
     console.error('[api/biometric] error:', (e as Error).message)
     return NextResponse.json({ error: 'processing error' }, { status: 500 })
