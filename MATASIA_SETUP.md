@@ -3,12 +3,19 @@
 Day school, small roll, understaffed, **mixed** (boys & girls). Feature set = **nkoroi parity**
 until specific improvements are requested. Shared Supabase `xwgtsldimlrhtgvpnjnd`.
 
-## Tenant — DONE (2026-06-06)
-- `schools.id` = **d380a396-c3dc-47a8-a1c3-0aa267c77869**, subdomain `matasia`, code `MATASIA`, county Kajiado.
-- `tenant_configs`: slug `matasia`, **short code `MTSA`** (parents log in with this), settings: `school_type=day`, `is_mixed=true`, `visitor_alerts=false`, `require_parent_phone=false`.
+## Tenant + repo — DONE (2026-06-06)
+- `schools.id` = **d380a396-c3dc-47a8-a1c3-0aa267c77869**, subdomain **`pceamatasia`** (aligned to host `pceamatasia.sychar.co.ke`), code `MATASIA`, county Kajiado.
+- `tenant_configs`: slug `pceamatasia`, **short code `MTSA`** (parents log in with this), settings: `school_type=day`, `is_mixed=true`, `visitor_alerts=false`, `require_parent_phone=false`.
+- **Repo created + pushed:** `github.com/jimmson-ux/pceauppermatasiasenior` (worker `pcea-matasia-pwa`, route `pceamatasia.sychar.co.ke/*`). Connect Lovable to it.
 
-## Pending (awaiting your data + GitHub URL + instructions)
-1. **Staff repo:** give the GitHub URL → I clone `nkoroi-mixed-pwa`, set worker name + route `matasia.sychar.co.ke/*` + `VITE_SCHOOL_NAME="PCEA Upper Matasia Senior Secondary School"`, push; connect Lovable. Replace `nkoroi-roster.ts` fallback + branding with PCEA's.
+## ⚠️ Multi-role staff (understaffing)
+Deputy Principal also = Storekeeper + Bursar + Subject Teacher. `staff_records.sub_role` is single → at seed time give multi-role staff `secondary_roles[]` (or duplicate role rows) so storekeeper/bursar/teacher pushes + dashboards all reach the one person. Don't lose any role.
+
+## DNS
+Add a **proxied CNAME `pceamatasia`** under the sychar.co.ke zone (unless `*.sychar.co.ke` wildcard already resolves it) so the worker route binds.
+
+## Pending (awaiting your data + secrets)
+1. **Lovable:** connect the repo; replace `nkoroi-roster.ts` fallback + `dev-bypass.ts` pilot UUID + branding with PCEA's.
 2. **Secrets** (Worker): own `STAFF_JWT_SECRET` (also add to wazazi `PUSH_RELAY_SECRETS`), Supabase service/anon, AI keys, Pusher, Upstash, Firebase. M-Pesa when fees go live.
 3. **Seed data** (via sychar-system admin endpoints): students (+guardian phones), staff (sub_role; note understaffing → fewer roles, possibly one person multi-role), subjects, academic terms, classes/streams, class-teacher assignments; then `parent_student_links` (`/api/admin/seed-parent-links` `seed_from_students`).
 4. **Deploy + DNS:** build + `wrangler deploy`; add `matasia.sychar.co.ke`.

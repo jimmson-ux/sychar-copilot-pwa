@@ -17,7 +17,7 @@
 |---|---|---|---|---|---|---|---|---|---|---|
 | Nkoroi Mixed Day Secondary | 68bd8d34-f2f0-4297-bd18-093328824d84 | (none, resolves by code) | NKOROI | 1834 | day | true | false | **true** | nkoroi-mixed-pwa | LIVE; 586 real students, 12 streams |
 | Oloolaiser High | d228b049-1185-4bf5-9577-52f7f9c714e9 | oloolaiser | OLOOLAISER | OLHS | boarding | false | **true** | true | oloolaiser-highschool-pwa | tenant ready; awaiting bio-data + deploy |
-| PCEA Upper Matasia Senior Sec | d380a396-c3dc-47a8-a1c3-0aa267c77869 | matasia | MATASIA | MTSA | day | true | false | false (flip after phones seeded) | (pending URL) | tenant created 2026-06-06; nkoroi-parity; data + repo pending |
+| PCEA Upper Matasia Senior Sec | d380a396-c3dc-47a8-a1c3-0aa267c77869 | **pceamatasia** | MATASIA | MTSA | day | true | false | false (flip after phones seeded) | jimmson-ux/pceauppermatasiasenior (worker `pcea-matasia-pwa`, route `pceamatasia.sychar.co.ke/*`) | repo created+pushed 2026-06-06; awaiting data/secrets/deploy/DNS. **Multi-role staff** (Deputy = storekeeper+bursar+subject teacher) → seed with secondary_roles. |
 
 ## 3. Feature inventory (all built; nkoroi-parity is the baseline every school inherits)
 - **Students/roster:** CSV import (`/api/admin/import-students`, class resolution, parent-link seed, optional biometric enrolment), staff import, parent↔student links. Admission numbers may legitimately repeat per school → uniqueness via `students.id` (UUID) + readable `admission_number` ref; `admission_no` is display + parent-search (dups allowed).
