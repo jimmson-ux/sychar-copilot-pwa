@@ -38,37 +38,30 @@ const statements = sql
   .map(s => s.replace(/--[^\n]*/g, ' ').replace(/\s+/g, ' ').trim())
   .filter(s => s.length > 10)
 
+// This script runs SQL through an `exec_sql_statement(p_sql text)` RPC. That RPC does NOT
+// exist in this project, so probe for it up-front and FAIL LOUD — the previous version
+// treated the "function not found" (PGRST202) error as success and silently applied nothing.
+const probe = await sb.rpc('exec_sql_statement', { p_sql: 'select 1' })
+if (probe.error && (probe.error.code === 'PGRST202' || /Could not find the function/i.test(probe.error.message))) {
+  console.error('❌ The exec_sql_statement(p_sql) RPC does not exist in this project.')
+  console.error('   Service-role JS cannot run DDL without it, so this script applies nothing.')
+  console.error('   Apply migrations instead via:  supabase db push   (or the Supabase Dashboard → SQL editor).')
+  process.exit(1)
+}
+
 console.log(`Running ${statements.length} SQL statements…\n`)
 
 let ok = 0, fail = 0
 for (const stmt of statements) {
   const { error } = await sb.rpc('exec_sql_statement', { p_sql: stmt }).single()
-  if (error) {
-    // Try direct approach via pg_catalog
-    const res = await fetch(URL + '/rest/v1/rpc/exec_sql_statement', {
-      method: 'POST',
-      headers: {
-        apikey: SKEY,
-        Authorization: 'Bearer ' + SKEY,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ p_sql: stmt }),
-    })
-    if (!res.ok) {
-      const txt = await res.text()
-      if (!txt.includes('already exists') && !txt.includes('PGRST202')) {
-        console.error('❌ FAIL:', stmt.slice(0, 80))
-        console.error('   ', txt.slice(0, 120))
-        fail++
-      } else {
-        ok++
-      }
-    } else {
-      ok++
-    }
+  if (error && !String(error.message).includes('already exists')) {
+    console.error('❌ FAIL:', stmt.slice(0, 80))
+    console.error('   ', String(error.message).slice(0, 160))
+    fail++
   } else {
     ok++
   }
 }
 
 console.log(`\n✅ ${ok} ok  ❌ ${fail} failed`)
+if (fail > 0) process.exit(1)

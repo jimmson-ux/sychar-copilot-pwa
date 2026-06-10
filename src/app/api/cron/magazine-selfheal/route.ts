@@ -6,6 +6,7 @@ export const dynamic = 'force-dynamic'
 
 import { createClient }           from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
+import { isCronAuthorized }        from '@/lib/cron-auth'
 
 function svc() {
   return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
@@ -16,7 +17,7 @@ const STALE_DAYS = 30
 const MAX_RETRIES = 3
 
 export async function GET(req: NextRequest) {
-  if (req.headers.get('x-cron-secret') !== process.env.CRON_SECRET) {
+  if (!isCronAuthorized(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
@@ -24,8 +25,9 @@ export async function GET(req: NextRequest) {
   const now   = new Date()
   const stats = { images_checked: 0, images_removed: 0, sections_healed: 0, reminders_sent: 0, schools_processed: 0 }
 
-  // Fetch all active schools
-  const { data: schools } = await db.from('schools').select('id').eq('active', true)
+  // Fetch all active schools (column is is_active — the old `active` filter matched no rows,
+  // so this cron was a silent no-op for every tenant).
+  const { data: schools } = await db.from('schools').select('id').eq('is_active', true)
   if (!schools?.length) return NextResponse.json({ ok: true, stats })
 
   for (const school of schools as { id: string }[]) {
