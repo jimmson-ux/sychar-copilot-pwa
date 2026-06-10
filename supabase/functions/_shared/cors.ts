@@ -2,6 +2,10 @@ const ALLOWED_ORIGINS = [
   'https://sychar-copilot-pwa.vercel.app',
   'https://nkoroi-school-management-6d13.vercel.app',
   'https://nkoroi-school-management-6d13-git-main-jimmson-uxs-projects.vercel.app',
+  // Live per-tenant PWA hosts (browsers call these edge functions directly).
+  'https://nkoroimixed.sychar.co.ke',
+  'https://oloolaiser.sychar.co.ke',
+  'https://pceamatasia.sychar.co.ke',
   'http://localhost:3000',
   'http://localhost:3001',
 ]
