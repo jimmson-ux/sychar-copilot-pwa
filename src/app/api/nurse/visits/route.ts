@@ -12,6 +12,9 @@ import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/requireAuth'
 import { sendWhatsApp } from '@/lib/whatsapp'
+import { recordMedicationIssue, followupDueFromPlan, type MedItem } from '@/lib/nurseStock'
+import { isClassHoursNow, studentCurrentLesson } from '@/lib/lessonContext'
+import { indexSchoolDocument } from '@/lib/rag'
 
 function svc() {
   return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
@@ -63,6 +66,12 @@ export async function POST(req: NextRequest) {
     complaint:    string
     action_taken: string
     notes?:       string
+    vitals?:              Record<string, unknown>
+    nurse_findings?:      string
+    management_provided?: string[]
+    medication_items?:    MedItem[]
+    referral_to?:         string
+    follow_up_plan?:      string
   }
 
   if (!body.student_id || !body.complaint || !body.action_taken) {
@@ -73,6 +82,11 @@ export async function POST(req: NextRequest) {
     .from('staff_records').select('id').eq('user_id', auth.userId!).eq('school_id', auth.schoolId!).single()
 
   const isInBay = body.action_taken === 'Bed Rest'
+  const meds = body.medication_items ?? []
+  const issuedMedication = meds.length > 0 || body.action_taken === 'Medication Administered'
+
+  // Defense flag: was this during scheduled class hours?
+  const duringClassHours = await isClassHoursNow(db, auth.schoolId!)
 
   const { data: visit, error } = await db
     .from('sick_bay_visits')
@@ -84,6 +98,16 @@ export async function POST(req: NextRequest) {
       notes:        body.notes ?? null,
       is_in_bay:    isInBay,
       seen_by:      (staff as { id: string } | null)?.id ?? null,
+      vitals:               body.vitals ?? {},
+      nurse_findings:       body.nurse_findings ?? null,
+      management_provided:  body.management_provided ?? [],
+      medication_items:     meds,
+      referral_to:          body.referral_to ?? null,
+      follow_up_plan:       body.follow_up_plan ?? null,
+      during_class_hours:   duringClassHours,
+      // medication-issued time = end of visit
+      medication_issued_at: issuedMedication ? new Date().toISOString() : null,
+      followup_due_at:      followupDueFromPlan(body.follow_up_plan),
     })
     .select('id, admitted_at')
     .single()
@@ -91,6 +115,11 @@ export async function POST(req: NextRequest) {
   if (error) return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
 
   const v = visit as { id: string; admitted_at: string }
+
+  // Deduct medication stock (shared with staff ledger for reconciliation).
+  if (meds.length) {
+    recordMedicationIssue(db, auth.schoolId!, meds, 'student', v.id, (staff as { id: string } | null)?.id ?? null).catch(() => {})
+  }
 
   // Fetch student + school data for notifications
   const [studentRes, schoolRes] = await Promise.all([
@@ -107,6 +136,9 @@ export async function POST(req: NextRequest) {
 
   // Outbreak detection
   checkOutbreak(body.complaint, auth.schoolId!, db).catch(() => {})
+
+  // Per-child parent health notification (strict mapping) + RAG index + lesson context.
+  postVisitSideEffects(db, auth.schoolId!, body.student_id, v.id, body.complaint, body.action_taken, student, duringClassHours).catch(() => {})
 
   // G&C auto-suggestion for Anxiety/Stress
   const gcSuggested = body.complaint === 'Anxiety/Stress'
@@ -212,4 +244,45 @@ async function checkOutbreak(complaint: string, schoolId: string, db: ReturnType
       detail:    { complaint, count, recommendation: 'Investigate possible food hygiene or environmental cause' },
     }).then(() => {}, () => {})
   }
+}
+
+// ── Per-child parent notification + RAG indexing ──────────────────────────────
+
+async function postVisitSideEffects(
+  db: ReturnType<typeof svc>,
+  schoolId: string,
+  studentId: string,
+  visitId: string,
+  complaint: string,
+  action: string,
+  student: StudentInfo,
+  duringClassHours: boolean,
+): Promise<void> {
+  const name = student?.full_name ?? 'Your child'
+
+  // 1) Parent health notifications — STRICT student→parent mapping (parent_student_links).
+  const { data: links } = await db
+    .from('parent_student_links')
+    .select('parent_id')
+    .eq('student_id', studentId)
+  const rows = (links ?? []).map((l: { parent_id: string }) => ({
+    school_id:  schoolId,
+    student_id: studentId,
+    parent_id:  l.parent_id,
+    visit_id:   visitId,
+    title:      'Health update',
+    body:       `${name} visited the school nurse — ${complaint}. Action: ${action}.`,
+  }))
+  if (rows.length) await db.from('parent_health_notifications').insert(rows).then(() => {}, () => {})
+
+  // 2) RAG index so future nurse insights / follow-ups can reference this visit.
+  await indexSchoolDocument({
+    schoolId,
+    sourceType:  'nurse_note',
+    sourceId:    visitId,
+    documentType: 'manual',
+    text: `Nurse visit: ${name} (${student?.class_name ?? ''}). Complaint: ${complaint}. Action: ${action}.` +
+          `${duringClassHours ? ' Occurred during class hours.' : ''}`,
+    metadata: { student_id: studentId, complaint, action, during_class_hours: duringClassHours, visit_id: visitId },
+  }).catch(() => {})
 }

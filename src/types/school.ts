@@ -22,6 +22,7 @@ export interface FeaturesEnabled {
   alumni_portal:         boolean
   e_magazine:            boolean
   qr_lesson_attendance:  boolean
+  strict_geofence:       boolean   // enforce mandatory geofence + lock on QR scans
   nts_management:        boolean
   gate_pass:             boolean
   provisions_store:      boolean
@@ -32,6 +33,7 @@ export interface SchoolContext {
   schoolName:     string
   shortName:      string
   schoolType:     'day' | 'boarding' | 'both'
+  genderProfile:  'mixed' | 'boys' | 'girls'
   curriculumMix:  'CBC' | '844' | 'fusion'
   theme:          SchoolTheme
   featuresEnabled: FeaturesEnabled
@@ -63,6 +65,7 @@ export const DEFAULT_FEATURES: FeaturesEnabled = {
   alumni_portal:         true,
   e_magazine:            true,
   qr_lesson_attendance:  true,
+  strict_geofence:       false,
   nts_management:        false,
   gate_pass:             true,
   provisions_store:      false,
@@ -73,6 +76,7 @@ export const DEFAULT_CONTEXT: SchoolContext = {
   schoolName:      'Sychar School',
   shortName:       'Sychar',
   schoolType:      'day',
+  genderProfile:   'mixed',
   curriculumMix:   'fusion',
   theme:           DEFAULT_THEME,
   featuresEnabled: DEFAULT_FEATURES,

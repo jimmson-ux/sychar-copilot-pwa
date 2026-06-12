@@ -119,6 +119,27 @@ serve(async (req: Request) => {
       }, 403)
     }
 
+    // ── Strict geofence mode (per-school flag) ───────────────────────────────
+    // When tenant_configs.features.strict_geofence = true, geofencing is
+    // MANDATORY: GPS must be present, the room must be Genesis-locked, the
+    // reading must be accurate, and the teacher must be inside the radius.
+    // This is what makes a photographed/reprinted wall QR useless elsewhere.
+    const { data: cfg } = await svc
+      .from('tenant_configs')
+      .select('features')
+      .eq('school_id', auth.schoolId)
+      .maybeSingle()
+    const strictGeofence = Boolean(
+      (cfg?.features as Record<string, boolean> | null)?.strict_geofence,
+    )
+
+    if (strictGeofence && (device_latitude == null || device_longitude == null)) {
+      return json({
+        error: 'Location required. Turn on GPS/location for this device and scan again from inside the classroom.',
+        geo_required: true,
+      }, 400)
+    }
+
     // ── GPS Geofence Check (Genesis Protocol integration) ────────────────────
     let geoVerified = false
     let geoMismatch = false
@@ -144,6 +165,14 @@ serve(async (req: Request) => {
 
       const { data: classroom } = await classroomQuery.maybeSingle()
 
+      // Strict mode: the room MUST be Genesis-locked before lessons can be scanned here.
+      if (strictGeofence && (!classroom?.is_geofence_locked || !classroom.geo_latitude || !classroom.geo_longitude)) {
+        return json({
+          error: 'This classroom has no active geofence lock. Ask an authorised delegate to run Genesis for this room before lessons can be scanned here.',
+          geo_required: true,
+        }, 400)
+      }
+
       if (classroom?.is_geofence_locked && classroom.geo_latitude && classroom.geo_longitude) {
         classroomId = classroom.id
         distanceMeters = haversineMeters(
@@ -159,6 +188,13 @@ serve(async (req: Request) => {
 
         if (!gpsAccurate) {
           geoNote = `GPS accuracy too low (±${Math.round(accuracy_radius!)} m) for geofence verification.`
+          // In strict mode an inaccurate fix cannot be trusted — reject.
+          if (strictGeofence) {
+            return json({
+              error: `GPS accuracy too low (±${Math.round(accuracy_radius!)} m). Move near a window/outdoors for a moment, then scan again inside ${classroom.room_name}.`,
+              geo_required: true,
+            }, 400)
+          }
         } else if (distanceMeters <= geofenceRadius) {
           geoVerified = true
         } else {

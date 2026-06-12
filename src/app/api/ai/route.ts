@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/requireAuth'
+import { buildSchoolSystemPrompt } from '@/lib/aiSchoolContext'
+import { retrieveSchoolContext, formatRagContext } from '@/lib/rag'
 
-const SYSTEM_PROMPT = `You are an intelligent school management AI assistant for a Kenyan secondary school. Be concise, practical, and grounded in the Kenyan education context (KCSE, CBC, KNEC guidelines).`
+const BASE_PROMPT = `You are an intelligent school management AI assistant. Be concise, practical, and grounded in the Kenyan education context (KCSE, CBC, KNEC guidelines).`
 
 export async function POST(req: NextRequest) {
   const groqKey = process.env.GROQ_API_KEY
@@ -23,6 +25,16 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    let systemPrompt = await buildSchoolSystemPrompt(auth.schoolId, BASE_PROMPT)
+
+    // RAG: ground the answer in this school's own records (strictly school-scoped).
+    const lastUser = [...messages].reverse().find((m) => m.role === 'user')?.content
+    if (lastUser) {
+      const chunks = await retrieveSchoolContext(auth.schoolId, lastUser)
+      const ragBlock = formatRagContext(chunks)
+      if (ragBlock) systemPrompt = `${systemPrompt}\n\n${ragBlock}`
+    }
+
     const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: { Authorization: `Bearer ${groqKey}`, 'Content-Type': 'application/json' },
@@ -30,7 +42,7 @@ export async function POST(req: NextRequest) {
         model: 'llama-3.3-70b-versatile',
         max_tokens: maxTokens,
         messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'system', content: systemPrompt },
           ...messages.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content })),
         ],
       }),

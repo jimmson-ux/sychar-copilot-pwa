@@ -7,7 +7,17 @@ const ALLOWED_DOC_TYPES = [
   'report_card_cbc', 'report_card_844',
   'invigilation_chart', 'duty_roster', 'suspension_letter',
   'merit_list', 'compliance_report', 'daily_diary',
+  // Synthesized branded templates (Phase 5):
+  'lesson_plan', 'record_of_work', 'tod_report', 'nurse_record', 'gc_case_file',
+  // Branded official documents:
+  'exeat', 'timetable',
 ]
+
+// Doc types that render via the generic branded template renderer.
+const BRANDED_TEMPLATE_TYPES = new Set([
+  'lesson_plan', 'record_of_work', 'tod_report', 'nurse_record', 'gc_case_file',
+  'exeat', 'timetable',
+])
 
 const CSS = `
   body { font-family: Arial, sans-serif; margin: 30px; color: #000; font-size: 12px; }
@@ -91,6 +101,7 @@ serve(async (req: Request) => {
 
 // deno-lint-ignore no-explicit-any
 function generateDocumentHtml(docType: string, data: Record<string, any>): string {
+  if (BRANDED_TEMPLATE_TYPES.has(docType)) return brandedTemplateHtml(docType, data)
   if (docType === 'aie_requisition')  return aieHtml(data)
   if (docType === 'report_card_cbc')  return reportCardCBCHtml(data)
   if (docType === 'report_card_844')  return reportCard844Html(data)
@@ -393,5 +404,80 @@ function reportCard844Html(d: Record<string, any>): string {
     <p><strong>Parent Signature:</strong> _____________________________ Date: _____________</p>
     <div style="float:right;border:1px solid #999;width:80px;height:60px;text-align:center;padding-top:20px;font-size:10px;color:#999">School Stamp</div>
   </div>
+  </body></html>`
+}
+
+// ── Branded template renderer (lesson plan / record of work / TOD / nurse / G&C) ──
+const TITLES: Record<string, string> = {
+  lesson_plan:    'LESSON PLAN',
+  record_of_work: 'RECORD OF WORK',
+  tod_report:     'TEACHER ON DUTY — DAILY REPORT',
+  nurse_record:   'SCHOOL HEALTH SERVICES RECORD',
+  gc_case_file:   'GUIDANCE & COUNSELLING CASE FILE',
+  exeat:          'EXEAT / LEAVE-OUT FORM',
+  timetable:      'CLASS TIMETABLE',
+}
+
+function esc(v: unknown): string {
+  return String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+// deno-lint-ignore no-explicit-any
+function brandedTemplateHtml(docType: string, d: Record<string, any>): string {
+  const title = d.title ?? TITLES[docType] ?? docType.replace(/_/g, ' ').toUpperCase()
+  const crest = d.logoUrl
+    ? `<img src="${esc(d.logoUrl)}" alt="crest" style="height:54px;width:auto;object-fit:contain;margin-bottom:6px" />`
+    : ''
+
+  const meta = Array.isArray(d.meta) && d.meta.length
+    ? `<div class="info-grid">${d.meta.map((m: { label: string; value: unknown }) =>
+        `<div class="info-row"><span class="label">${esc(m.label)}:</span> ${esc(m.value)}</div>`).join('')}</div>`
+    : ''
+
+  // deno-lint-ignore no-explicit-any
+  const renderSection = (s: any): string => {
+    let inner = ''
+    if (s.text) inner += `<p style="white-space:pre-wrap;font-size:12px;margin:4px 0">${esc(s.text)}</p>`
+    if (Array.isArray(s.rows) && s.rows.length) {
+      inner += `<div class="info-grid">${s.rows.map((r: { label: string; value: unknown }) =>
+        `<div class="info-row"><span class="label">${esc(r.label)}:</span> ${esc(r.value)}</div>`).join('')}</div>`
+    }
+    if (s.table && Array.isArray(s.table.columns)) {
+      inner += `<table><thead><tr>${s.table.columns.map((c: string) => `<th>${esc(c)}</th>`).join('')}</tr></thead>
+        <tbody>${(s.table.rows ?? []).map((row: unknown[]) =>
+          `<tr>${row.map((c) => `<td>${esc(c)}</td>`).join('')}</tr>`).join('')}</tbody></table>`
+    }
+    if (Array.isArray(s.list) && s.list.length) {
+      inner += `<ul style="margin:4px 0;padding-left:20px;font-size:12px">${s.list.map((i: unknown) => `<li>${esc(i)}</li>`).join('')}</ul>`
+    }
+    return `<h3 style="margin:14px 0 4px;font-size:13px;border-bottom:1px solid #ccc">${esc(s.heading)}</h3>${inner}`
+  }
+
+  const sections = Array.isArray(d.sections) ? d.sections.map(renderSection).join('') : ''
+
+  // Auto digital signature (e.g. "Signed: JANE DOE — 2026-06-12 14:05 (digital)")
+  const signature = d.digitalSignature
+    ? `<div style="margin-top:28px;font-size:12px"><b>${esc(d.signatureLabel ?? 'Signed')}:</b> ${esc(d.digitalSignature)}</div>`
+    : ''
+  const signatureLines = Array.isArray(d.signatures) && d.signatures.length
+    ? `<div class="sig-row">${d.signatures.map((sg: { label: string }) =>
+        `<div class="sig-box"><p>${esc(sg.label)}</p><p>Sign: _______________ Date: _________</p></div>`).join('')}</div>`
+    : ''
+
+  return `<html><head><style>${CSS}
+    .footer { margin-top:28px; padding-top:8px; border-top:1px solid #ccc; text-align:center; font-size:10px; color:#666; }
+  </style></head><body>
+  <div class="header">
+    ${crest}
+    <h2>${esc(d.schoolName ?? '')}</h2>
+    ${d.knecCode ? `<p>KNEC Code: ${esc(d.knecCode)}</p>` : ''}
+    <h3>${esc(title)}</h3>
+    ${d.subtitle ? `<p>${esc(d.subtitle)}</p>` : ''}
+  </div>
+  ${meta}
+  ${sections}
+  ${signatureLines}
+  ${signature}
+  <div class="footer">Generated by Sychar &middot; ${new Date().toLocaleString('en-KE')}</div>
   </body></html>`
 }

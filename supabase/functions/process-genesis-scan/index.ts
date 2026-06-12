@@ -18,14 +18,6 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { corsHeaders, handleOptions } from '../_shared/cors.ts'
 import { verifyRequest } from '../_shared/auth.ts'
 
-const GENESIS_ROLES = new Set([
-  'principal',
-  'deputy_principal',
-  'deputy_principal_academic',
-  'deputy_principal_admin',
-  'super_admin',
-])
-
 // Effective accuracy gate for the weighted centroid sent by the frontend.
 // 8 m aligns with the frontend's per-sample rejection threshold.
 const ACCURACY_GATE_M = 8
@@ -51,9 +43,31 @@ serve(async (req: Request) => {
     const auth = await verifyRequest(req)
     if (!auth) return json({ error: 'Unauthorized' }, 401)
 
-    if (!GENESIS_ROLES.has(auth.role)) {
+    const svc = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+    )
+
+    // ── Capability check (principal-delegable) ──────────────────────────────
+    // Genesis geofence-locking is no longer restricted to a fixed role set;
+    // the principal can delegate it (e.g. Oloolaiser: deputy + one of choice).
+    const { data: scanner } = await svc
+      .from('staff_records')
+      .select('id')
+      .eq('user_id', auth.userId)
+      .eq('school_id', auth.schoolId)
+      .maybeSingle()
+
+    const { data: canLock } = scanner
+      ? await svc.rpc('has_genesis_capability', {
+          p_staff_id: scanner.id,
+          p_capability: 'lock_geofence',
+        })
+      : { data: false }
+
+    if (!canLock) {
       return json({
-        error: 'Only the Principal or Deputy Principal can perform Genesis scans.',
+        error: 'You are not authorised to lock classroom geofences. Ask the principal to delegate this to you.',
       }, 403)
     }
 
@@ -89,11 +103,6 @@ serve(async (req: Request) => {
         gate_failed: true,
       }, 400)
     }
-
-    const svc = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
-    )
 
     // ── Fetch classroom ───────────────────────────────────────────────────────
     const { data: classroom, error: cErr } = await svc
@@ -146,18 +155,11 @@ serve(async (req: Request) => {
     // ── Seed classroom_gps_logs with the genesis centroid ─────────────────────
     // Mark used_for_centroid = true so the self-heal trigger doesn't count this
     // founding reading in the next refinement batch.
-    const { data: staffRow } = await svc
-      .from('staff_records')
-      .select('id')
-      .eq('user_id', auth.userId)
-      .eq('school_id', auth.schoolId)
-      .maybeSingle()
-
-    if (staffRow) {
+    if (scanner) {
       await svc.from('classroom_gps_logs').insert({
         classroom_id:          classroom_id,
         school_id:             auth.schoolId,
-        teacher_id:            staffRow.id,
+        teacher_id:            scanner.id,
         scan_latitude:         device_latitude,
         scan_longitude:        device_longitude,
         accuracy_meters:       accuracy_radius,

@@ -60,6 +60,7 @@ export async function GET() {
     schoolName:      meta?.name ?? settings?.school_name ?? 'My School',
     shortName:       meta?.short_name ?? meta?.name?.split(' ').slice(0, 2).join(' ') ?? 'My School',
     schoolType:      (meta?.school_type ?? 'day') as SchoolContext['schoolType'],
+    genderProfile:   (meta?.gender_profile ?? 'mixed') as SchoolContext['genderProfile'],
     curriculumMix:   (meta?.curriculum_mix ?? 'fusion') as SchoolContext['curriculumMix'],
     theme,
     featuresEnabled,

@@ -161,6 +161,29 @@ serve(async (req: Request) => {
     const AI_MODEL = GROQ_API_KEY ? 'llama-3.3-70b-versatile' : 'gpt-4o-mini'
     if (!AI_KEY) throw new Error('No AI API key configured (set GROQ_API_KEY or OPENAI_API_KEY)')
 
+    const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2')
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
+    )
+
+    // School-aware framing (boys-only / boarding) for the tenant.
+    let systemPrompt = SYSTEM_PROMPT
+    if (auth?.schoolId) {
+      const { data: sm } = await supabase
+        .from('school_metadata')
+        .select('gender_profile, school_type')
+        .eq('school_id', auth.schoolId)
+        .maybeSingle()
+      if (sm) {
+        const extras: string[] = []
+        if (sm.gender_profile === 'boys') extras.push('This is a BOYS-ONLY school — frame discipline, performance and mental-health analysis around boy-child behaviour and tendencies; never reference female students.')
+        else if (sm.gender_profile === 'girls') extras.push('This is a GIRLS-ONLY school — frame analysis around girl-child behaviour; never reference male students.')
+        if (sm.school_type === 'boarding' || sm.school_type === 'both') extras.push('It is a boarding school — consider boarding welfare (homesickness, dormitory dynamics, prep routines, sick-bay patterns, night safety).')
+        if (extras.length) systemPrompt = `${SYSTEM_PROMPT}\n${extras.join(' ')}`
+      }
+    }
+
     const prompt = buildPrompt(insightType, typeof context === 'string' ? context : JSON.stringify(context))
 
     const claudeRes = await fetch(AI_URL, {
@@ -173,7 +196,7 @@ serve(async (req: Request) => {
         model:      AI_MODEL,
         max_tokens: insightType === 'invigilation_suggest' ? 600 : 400,
         messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'system', content: systemPrompt },
           { role: 'user',   content: prompt },
         ],
       }),
@@ -186,12 +209,6 @@ serve(async (req: Request) => {
 
     const claudeData = await claudeRes.json() as { choices?: { message: { content: string } }[] }
     const insight    = claudeData.choices?.[0]?.message?.content ?? ''
-
-    const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2')
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    )
 
     await supabase.from('ai_insights').insert([{
       school_id:    auth?.schoolId ?? null,
