@@ -7,19 +7,19 @@ export const dynamic = 'force-dynamic'
 /**
  * POST /api/parent/auth/verify-by-details
  *
- * THE auth entry point — no phone, no OTP.
- * Security = knowing your child's school + admission number + name
- *            (or class name + name for schools without admission numbers).
+ * THE parent auth entry point — NO phone, NO OTP (phone numbers are not collected
+ * for any school). Security + student↔parent mapping = the parent must supply ALL
+ * of: school code + admission number + student full name + class. All four must
+ * resolve to ONE student; the issued JWT is scoped to that student_id, and every
+ * parent read filters by the token's student_ids — so the mapping is enforced at
+ * the token level (a parent only ever sees the child whose details they proved).
  *
- * Body:
- *   { school_code, admission_no, student_name }
- *   { school_code, class_name,   student_name }
+ * Body: { school_code, admission_no, student_name, class_name }
+ *   class_name may be omitted ONLY when a school does not use admission numbers
+ *   (then admission_no is omitted and class_name + name is the identifier).
  *
- * school_code = tenant_configs.slug  OR  tenant_configs.school_short_code
- *
- * Response: { token, student, school }
- * The JWT contains school_id + [student_id] and is valid for 30 days.
- * Parents can verify additional children and accumulate student_ids in the app.
+ * school_code = tenant_configs.slug OR tenant_configs.school_short_code
+ * Response: { token, student, school }. JWT valid 30 days.
  */
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}))
@@ -41,9 +41,17 @@ export async function POST(req: NextRequest) {
   if (!student_name?.trim()) {
     return NextResponse.json({ error: 'student_name is required' }, { status: 400 })
   }
+  // Enforce the full credential set: admission number is the primary key; class is
+  // required alongside it so all four credentials must agree (defence-in-depth).
   if (!admission_no?.trim() && !class_name?.trim()) {
     return NextResponse.json(
-      { error: 'Provide admission_no, or class_name + student_name' },
+      { error: 'Provide school code, admission number, full name and class.' },
+      { status: 400 },
+    )
+  }
+  if (admission_no?.trim() && !class_name?.trim()) {
+    return NextResponse.json(
+      { error: 'class is required (school code + admission number + full name + class).' },
       { status: 400 },
     )
   }
@@ -112,6 +120,22 @@ export async function POST(req: NextRequest) {
       )
     }
     return NextResponse.json({ error: 'Student name does not match our records' }, { status: 401 })
+  }
+
+  // ── Class verification ─────────────────────────────────────────
+  // When admission_no was used, the class must also match the student's class —
+  // all four credentials (school + admission + name + class) must agree.
+  if (admission_no?.trim() && class_name?.trim()) {
+    const provided = class_name.trim().toLowerCase()
+    const actual   = (match.class_name ?? '').toLowerCase()
+    const classOk  = actual.includes(provided) || provided.includes(actual) ||
+      provided.split(/\s+/).every((t) => t.length < 2 || actual.includes(t))
+    if (!classOk) {
+      return NextResponse.json(
+        { error: 'Class does not match our records for that admission number.' },
+        { status: 401 },
+      )
+    }
   }
 
   // ── Issue JWT ─────────────────────────────────────────────────
