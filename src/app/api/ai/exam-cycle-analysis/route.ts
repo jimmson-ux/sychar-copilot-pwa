@@ -7,6 +7,7 @@ import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/requireAuth'
 import { rateLimit, LIMITS } from '@/lib/rateLimit'
+import { askAIProvider } from '@/lib/aiProvider'
 
 function svc() {
   return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
@@ -35,10 +36,6 @@ export async function POST(req: Request) {
   const month = new Date().getMonth() + 1
   const term  = body.term ?? String(month <= 4 ? 1 : month <= 8 ? 2 : 3)
   const year  = body.academic_year ?? String(new Date().getFullYear())
-
-  if (!process.env.GROQ_API_KEY) {
-    return NextResponse.json({ error: 'AI service not configured' }, { status: 503 })
-  }
 
   const db = svc()
 
@@ -96,18 +93,11 @@ Subject performance:
 ${subjectSummary || 'No exam data available'}
 `.trim()
 
-  const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'llama-3.3-70b-versatile',
-      max_tokens: 800,
-      messages: [{
-        role: 'user',
-        content: `You are an academic analyst for a Kenyan secondary school. Analyze the following exam data and return ONLY valid JSON with no markdown:
+  let rawText = '{}'
+  try {
+    const ai = await askAIProvider(
+      'You are an academic analyst for a Kenyan secondary school.',
+      [{ role: 'user', content: `Analyze the following exam data and return ONLY valid JSON with no markdown:
 
 {
   "trend_summary": "2-3 sentence overall academic health summary",
@@ -117,13 +107,11 @@ ${subjectSummary || 'No exam data available'}
 }
 
 School data:
-${context}`,
-      }],
-    }),
-  })
-  if (!groqRes.ok) return NextResponse.json({ error: 'AI service error' }, { status: 502 })
-  const groqData = await groqRes.json() as { choices?: { message: { content: string } }[] }
-  const rawText = groqData.choices?.[0]?.message?.content ?? '{}'
+${context}` }],
+      800,
+    )
+    rawText = ai.content || '{}'
+  } catch { return NextResponse.json({ error: 'AI service error' }, { status: 502 }) }
   let analysis: Record<string, unknown>
   try {
     analysis = JSON.parse(rawText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim())

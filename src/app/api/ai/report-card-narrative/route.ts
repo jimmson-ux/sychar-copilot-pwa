@@ -6,6 +6,7 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/requireAuth'
 import { rateLimit, LIMITS } from '@/lib/rateLimit'
+import { askAIProvider } from '@/lib/aiProvider'
 
 const ALLOWED = new Set([
   'class_teacher', 'form_principal_form4', 'form_principal_grade10',
@@ -48,20 +49,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'studentName required' }, { status: 400 })
   }
 
-  const groqKey = process.env.GROQ_API_KEY
-  if (!groqKey) {
-    return NextResponse.json({ error: 'AI service not configured' }, { status: 503 })
-  }
-
-  const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${groqKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: 'llama-3.3-70b-versatile',
-      max_tokens: 300,
-      messages: [{
-        role: 'user',
-        content: `Write a concise, professional 4-sentence report card comment for a Kenyan secondary school student.
+  let narrative = ''
+  try {
+    const ai = await askAIProvider(
+      'You are a Kenyan secondary school teacher writing report-card comments.',
+      [{ role: 'user', content: `Write a concise, professional 4-sentence report card comment for a Kenyan secondary school student.
 
 Student: ${studentName}
 Average score: ${averageScore}%
@@ -76,14 +68,11 @@ Rules:
 - Specific to the data above (not generic)
 - Suitable for parents to read
 - Do NOT include student name in output (it will be added separately)
-- Plain text only, no JSON, no markdown`,
-      }],
-    }),
-  })
-
-  if (!groqRes.ok) return NextResponse.json({ error: 'AI service unavailable' }, { status: 502 })
-  const groqData = await groqRes.json() as { choices?: { message: { content: string } }[] }
-  const narrative = (groqData.choices?.[0]?.message?.content ?? '').trim()
+- Plain text only, no JSON, no markdown` }],
+      300,
+    )
+    narrative = ai.content.trim()
+  } catch { return NextResponse.json({ error: 'AI service unavailable' }, { status: 502 }) }
 
   return NextResponse.json({ narrative, generatedAt: new Date().toISOString() })
 }

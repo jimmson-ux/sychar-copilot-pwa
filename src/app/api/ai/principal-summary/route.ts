@@ -8,6 +8,7 @@ import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/requireAuth'
 import { rateLimit, LIMITS } from '@/lib/rateLimit'
+import { askAIProvider } from '@/lib/aiProvider'
 
 function svc() {
   return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
@@ -112,18 +113,11 @@ School Context — ${today}:
 - Staff on duty today: ${dutyRes.count ?? 0}
 `.trim()
 
-  const groqKey = process.env.GROQ_API_KEY
-  if (!groqKey) return NextResponse.json({ error: 'AI service not configured' }, { status: 503 })
-
-  const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${groqKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: 'llama-3.3-70b-versatile',
-      max_tokens: 600,
-      messages: [{
-        role: 'user',
-        content: `You are the AI command center for a Kenyan secondary school principal. Based on the following school data, provide a concise daily briefing in exactly this format:
+  let summary = ''
+  try {
+    const ai = await askAIProvider(
+      'You are the AI command center for a Kenyan secondary school principal.',
+      [{ role: 'user', content: `Based on the following school data, provide a concise daily briefing in exactly this format:
 
 1. Start with a one-sentence overall status (traffic light: 🟢 All systems normal / 🟡 Attention needed / 🔴 Urgent action required)
 2. List the top 3 items needing principal attention right now (be specific and actionable)
@@ -132,14 +126,11 @@ School Context — ${today}:
 Keep the entire response under 200 words. Use plain text, no markdown headers.
 
 School data:
-${context}`,
-      }],
-    }),
-  })
-
-  if (!groqRes.ok) return NextResponse.json({ error: 'AI service unavailable' }, { status: 502 })
-  const groqData = await groqRes.json() as { choices?: { message: { content: string } }[] }
-  const summary = groqData.choices?.[0]?.message?.content ?? ''
+${context}` }],
+      600,
+    )
+    summary = ai.content
+  } catch { return NextResponse.json({ error: 'AI service unavailable' }, { status: 502 }) }
 
   // Store in ai_insights
   await db.from('ai_insights').insert({
