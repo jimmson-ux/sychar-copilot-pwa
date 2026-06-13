@@ -25,6 +25,19 @@ const GROQ_MODEL      = Deno.env.get('GROQ_MODEL')      ?? 'llama-3.3-70b-versat
 
 type Msg = { role: 'user' | 'assistant' | 'system'; content: string }
 
+/** True if the bearer is a Supabase service_role JWT (the gateway has already verified
+ * its signature when verify_jwt is on; this only reads the role claim). */
+function isServiceRoleJwt(token: string): boolean {
+  try {
+    const part = token.split('.')[1]
+    if (!part) return false
+    const json = JSON.parse(atob(part.replace(/-/g, '+').replace(/_/g, '/')))
+    return json?.role === 'service_role'
+  } catch {
+    return false
+  }
+}
+
 serve(async (req: Request) => {
   const origin = req.headers.get('origin')
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders(origin) })
@@ -32,11 +45,26 @@ serve(async (req: Request) => {
     new Response(JSON.stringify(b), { status, headers: { 'Content-Type': 'application/json', ...corsHeaders(origin) } })
 
   try {
-    // Accept staff (staff_records) OR parent (users) tokens.
-    const auth = (await verifyRequest(req)) ?? (await verifyToken(req))
-    if (!auth) return json({ error: 'Unauthorized' }, 401)
+    const body = await req.json().catch(() => ({})) as {
+      messages?: Msg[]; task?: string; maxTokens?: number; system?: string; skipRag?: boolean; schoolId?: string
+    }
 
-    const body = await req.json().catch(() => ({})) as { messages?: Msg[]; task?: string; maxTokens?: number }
+    // Auth: user token (staff/parent) OR trusted server-to-server (service-role bearer
+    // from a school PWA's own server fn, which already authenticated the user). In server
+    // mode the school_id is taken from the body (trusted because only the service key,
+    // a server-side secret, unlocks this path).
+    const bearer = (req.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, '')
+    const isService = isServiceRoleJwt(bearer) || (!!bearer && bearer === Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'))
+    let schoolId: string
+    if (isService) {
+      if (!body.schoolId) return json({ error: 'schoolId required in service mode' }, 400)
+      schoolId = body.schoolId
+    } else {
+      const auth = (await verifyRequest(req)) ?? (await verifyToken(req))
+      if (!auth) return json({ error: 'Unauthorized' }, 401)
+      schoolId = auth.schoolId
+    }
+
     const messages = Array.isArray(body.messages) ? body.messages.filter((m) => m?.content?.trim()) : []
     if (messages.length === 0) return json({ error: 'messages array required' }, 400)
     const maxTokens = Math.min(Math.max(body.maxTokens ?? 1000, 64), 4000)
@@ -44,22 +72,27 @@ serve(async (req: Request) => {
     const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2')
     const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
 
-    // ── School-aware system prompt (tenant_configs is the live config store) ──
-    let systemPrompt = BASE_PROMPT
-    const { data: tc } = await supabase
-      .from('tenant_configs')
-      .select('name, gender_profile')
-      .eq('school_id', auth.schoolId)
-      .maybeSingle()
-    if (tc?.name) systemPrompt += `\n\nSchool: ${tc.name}.`
-    if (tc?.gender_profile === 'boys') systemPrompt += ' This is a BOYS-ONLY school — frame analysis around boy-child behaviour; never reference female students.'
-    if (tc?.gender_profile === 'girls') systemPrompt += ' This is a GIRLS-ONLY school — frame analysis around girl-child behaviour; never reference male students.'
-    if (body.task) systemPrompt += `\n\nTask focus: ${body.task}.`
+    // ── System prompt: caller may supply a fully-built one (PWA's role-scoped prompt);
+    //    otherwise build a school-aware default. ──
+    let systemPrompt: string
+    if (body.system && body.system.trim()) {
+      systemPrompt = body.system
+    } else {
+      systemPrompt = BASE_PROMPT
+      const { data: tc } = await supabase
+        .from('tenant_configs').select('name, gender_profile').eq('school_id', schoolId).maybeSingle()
+      if (tc?.name) systemPrompt += `\n\nSchool: ${tc.name}.`
+      if (tc?.gender_profile === 'boys') systemPrompt += ' This is a BOYS-ONLY school — frame analysis around boy-child behaviour; never reference female students.'
+      if (tc?.gender_profile === 'girls') systemPrompt += ' This is a GIRLS-ONLY school — frame analysis around girl-child behaviour; never reference male students.'
+      if (body.task) systemPrompt += `\n\nTask focus: ${body.task}.`
+    }
 
-    // ── RAG: ground in this school's documents only (best-effort) ──
-    const lastUser = [...messages].reverse().find((m) => m.role === 'user')?.content
-    const ragBlock = lastUser ? await ragContext(supabase, auth.schoolId, lastUser) : ''
-    if (ragBlock) systemPrompt += `\n\nUse these school records when relevant:\n${ragBlock}`
+    // ── RAG: ground in this school's documents (skip if caller already did its own) ──
+    if (!body.skipRag && !body.system) {
+      const lastUser = [...messages].reverse().find((m) => m.role === 'user')?.content
+      const ragBlock = lastUser ? await ragContext(supabase, schoolId, lastUser) : ''
+      if (ragBlock) systemPrompt += `\n\nUse these school records when relevant:\n${ragBlock}`
+    }
 
     // ── Provider chain: ChatGPT → Claude → Groq (ChatGPT+Claude via OpenRouter if
     //    the key is an OpenRouter key, else native OpenAI/Anthropic) ──
