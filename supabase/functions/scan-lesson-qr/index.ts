@@ -33,11 +33,15 @@ serve(async (req: Request) => {
       device_latitude,
       device_longitude,
       accuracy_radius,
+      device_fingerprint,
+      device_label,
     } = await req.json() as {
       qr_payload: string
       device_latitude?: number
       device_longitude?: number
       accuracy_radius?: number
+      device_fingerprint?: string
+      device_label?: string
     }
 
     if (!qr_payload) return json({ error: 'qr_payload required' }, 400)
@@ -132,6 +136,29 @@ serve(async (req: Request) => {
     const strictGeofence = Boolean(
       (cfg?.features as Record<string, boolean> | null)?.strict_geofence,
     )
+    const strictDevice = Boolean(
+      (cfg?.features as Record<string, boolean> | null)?.strict_device,
+    )
+
+    // ── Device registration (anti-proxy) ─────────────────────────────────────
+    // Bind the teacher to approved device(s). A new device is recorded PENDING; if
+    // strict_device is on for the school, an unapproved device is rejected.
+    let deviceApproved = true
+    if (device_fingerprint) {
+      const { data: appr } = await svc.rpc('touch_teacher_device', {
+        p_teacher_id: staff.id, p_school_id: auth.schoolId,
+        p_fingerprint: device_fingerprint, p_label: device_label ?? null,
+      })
+      deviceApproved = Boolean(appr)
+      if (strictDevice && !deviceApproved) {
+        return json({
+          error: 'Unrecognised device. This phone is not yet approved for lesson scanning — ask the Deputy/Dean to approve it.',
+          deviceStatus: 'pending',
+        }, 403)
+      }
+    } else if (strictDevice) {
+      return json({ error: 'Device identification required for lesson scanning.' }, 400)
+    }
 
     if (strictGeofence && (device_latitude == null || device_longitude == null)) {
       return json({
@@ -254,9 +281,9 @@ serve(async (req: Request) => {
         scanned_at: new Date().toISOString(),
         late_minutes: lateMinutes,
         status: attendanceStatus,
-        device_info: req.headers.get('user-agent') ?? null,
+        device_info: device_label ?? req.headers.get('user-agent') ?? null,
         ip_address: req.headers.get('x-forwarded-for') ?? null,
-        notes: geoNote,
+        notes: [geoNote, deviceApproved ? null : 'New/unapproved device — pending leadership approval'].filter(Boolean).join(' · ') || null,
       })
       .select('id')
       .single()
@@ -328,6 +355,7 @@ serve(async (req: Request) => {
       expected_end: period.end_time,
       geo_verified: geoVerified,
       geo_note: geoNote,
+      device_status: device_fingerprint ? (deviceApproved ? 'approved' : 'pending') : 'unknown',
       distance_meters: distanceMeters ? Math.round(distanceMeters) : null,
       ai_flag: anomalyFlag.suspicious ? anomalyFlag.reason : null,
     })
