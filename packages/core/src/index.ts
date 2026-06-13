@@ -17,6 +17,7 @@ export * from './domain/subjectColors'
 export * from './domain/billing'
 export * from './domain/nurseStock'
 export * from './domain/features'
+export * from './domain/roleRouting'
 
 // Shared types
 export * from './types/school'
