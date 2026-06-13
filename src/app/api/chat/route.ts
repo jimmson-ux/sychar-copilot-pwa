@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/requireAuth'
+import { askAIProvider } from '@/lib/aiProvider'
 
 const SYSTEM_PROMPT = `You are an intelligent assistant for Sychar School management system.
 You help school staff (teachers, HODs, bursars, principals) with:
@@ -19,12 +20,6 @@ interface Message {
 }
 
 export async function POST(request: Request) {
-  const groqKey = process.env.GROQ_API_KEY
-  if (!groqKey) {
-    console.error('[chat] GROQ_API_KEY not set')
-    return NextResponse.json({ error: 'Server misconfigured' }, { status: 500 })
-  }
-
   // 1. Verify session — derives userId and schoolId server-side
   const auth = await requireAuth()
   if (auth.unauthorized) return auth.unauthorized
@@ -59,35 +54,12 @@ export async function POST(request: Request) {
 
   const contextNote = `\n\nCurrent user sub_role: ${auth.subRole ?? 'unknown'}`
 
-  let res: Response
   try {
-    res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${groqKey}`,
-      },
-      body: JSON.stringify({
-        model: 'llama-3.1-8b-instant',
-        max_tokens: 1024,
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT + contextNote },
-          ...safeMessages,
-        ],
-      }),
-    })
+    // OpenAI (ChatGPT) → Anthropic (Claude) → Groq.
+    const { content } = await askAIProvider(SYSTEM_PROMPT + contextNote, safeMessages, 1024)
+    return NextResponse.json({ reply: content })
   } catch {
-    console.error('[chat] Groq fetch failed')
+    console.error('[chat] all AI providers failed')
     return NextResponse.json({ error: 'AI service unavailable' }, { status: 502 })
   }
-
-  if (!res.ok) {
-    console.error('[chat] Groq error:', res.status)
-    return NextResponse.json({ error: 'AI service unavailable' }, { status: 502 })
-  }
-
-  const data = await res.json() as { choices?: { message: { content: string } }[] }
-  const text: string = data.choices?.[0]?.message?.content ?? ''
-
-  return NextResponse.json({ reply: text })
 }

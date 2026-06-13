@@ -2,13 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/requireAuth'
 import { buildSchoolSystemPrompt } from '@/lib/aiSchoolContext'
 import { retrieveSchoolContext, formatRagContext } from '@/lib/rag'
+import { askAIProvider, type AiMessage } from '@/lib/aiProvider'
 
 const BASE_PROMPT = `You are an intelligent school management AI assistant. Be concise, practical, and grounded in the Kenyan education context (KCSE, CBC, KNEC guidelines).`
 
 export async function POST(req: NextRequest) {
-  const groqKey = process.env.GROQ_API_KEY
-  if (!groqKey) return NextResponse.json({ error: 'AI service not configured' }, { status: 503 })
-
   const auth = await requireAuth()
   if (auth.unauthorized) return auth.unauthorized
 
@@ -35,25 +33,15 @@ export async function POST(req: NextRequest) {
       if (ragBlock) systemPrompt = `${systemPrompt}\n\n${ragBlock}`
     }
 
-    const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${groqKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
-        max_tokens: maxTokens,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          ...messages.map(m => ({ role: m.role as 'user' | 'assistant', content: m.content })),
-        ],
-      }),
-    })
-
-    if (!groqRes.ok) return NextResponse.json({ error: 'AI request failed' }, { status: 502 })
-    const groqData = await groqRes.json() as { choices?: { message: { content: string } }[] }
-    const content = groqData.choices?.[0]?.message?.content ?? ''
-    return NextResponse.json({ content })
+    // OpenAI (ChatGPT) → Anthropic (Claude) → Groq.
+    const { content, provider } = await askAIProvider(
+      systemPrompt,
+      messages.map((m) => ({ role: m.role as AiMessage['role'], content: m.content })),
+      maxTokens,
+    )
+    return NextResponse.json({ content, provider })
   } catch (err) {
     console.error('[api/ai] error:', err)
-    return NextResponse.json({ error: 'AI request failed' }, { status: 500 })
+    return NextResponse.json({ error: 'AI request failed' }, { status: 502 })
   }
 }

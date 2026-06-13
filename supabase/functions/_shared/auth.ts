@@ -8,14 +8,16 @@ export async function verifyRequest(req: Request): Promise<{
 } | null> {
   const authHeader = req.headers.get('authorization')
   if (!authHeader) return null
+  const token = authHeader.replace(/^Bearer\s+/i, '')
 
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL')!,
     Deno.env.get('SUPABASE_ANON_KEY')!,
-    { global: { headers: { authorization: authHeader } } }
   )
 
-  const { data: { user }, error } = await supabase.auth.getUser()
+  // Pass the token explicitly — getUser() with no arg does not reliably read a
+  // forwarded Authorization header in the edge runtime.
+  const { data: { user }, error } = await supabase.auth.getUser(token)
   if (error || !user) return null
 
   const serviceClient = createClient(
@@ -27,7 +29,7 @@ export async function verifyRequest(req: Request): Promise<{
     .from('staff_records')
     .select('sub_role, school_id')
     .eq('user_id', user.id)
-    .single()
+    .maybeSingle()
 
   if (!staff?.school_id) return null
 
@@ -42,21 +44,21 @@ export async function verifyToken(req: Request): Promise<{
 } | null> {
   const authHeader = req.headers.get('authorization')
   if (!authHeader) return null
+  const token = authHeader.replace(/^Bearer\s+/i, '')
 
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL')!,
     Deno.env.get('SUPABASE_ANON_KEY')!,
-    { global: { headers: { authorization: authHeader } } }
   )
 
-  const { data: { user }, error } = await supabase.auth.getUser()
+  const { data: { user }, error } = await supabase.auth.getUser(token)
   if (error || !user) return null
 
   const { data } = await supabase
     .from('users')
     .select('role, school_id')
     .eq('id', user.id)
-    .single()
+    .maybeSingle()
 
   if (!data?.school_id) return null
 

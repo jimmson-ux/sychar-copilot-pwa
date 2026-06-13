@@ -3,6 +3,7 @@ import { requireAuth } from '@/lib/requireAuth'
 import { createAdminSupabaseClient } from '@/lib/supabase-server'
 import { buildSchoolSystemPrompt } from '@/lib/aiSchoolContext'
 import { retrieveSchoolContext, formatRagContext } from '@/lib/rag'
+import { askAIProvider } from '@/lib/aiProvider'
 
 export const dynamic = 'force-dynamic'
 
@@ -16,9 +17,6 @@ export const dynamic = 'force-dynamic'
  * Body: { question, student_id? }
  */
 export async function POST(req: NextRequest) {
-  const groqKey = process.env.GROQ_API_KEY
-  if (!groqKey) return NextResponse.json({ error: 'AI service not configured' }, { status: 503 })
-
   const auth = await requireAuth()
   if (auth.unauthorized) return auth.unauthorized
   if (auth.subRole !== 'nurse') return NextResponse.json({ error: 'Forbidden: nurse only' }, { status: 403 })
@@ -63,20 +61,13 @@ export async function POST(req: NextRequest) {
   ].filter(Boolean).join('\n\n')
 
   try {
-    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${groqKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile', max_tokens: 500, temperature: 0.3,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: `${context}\n\nNurse question: ${body.question.trim()}` },
-        ],
-      }),
-    })
-    if (!res.ok) return NextResponse.json({ error: 'AI request failed' }, { status: 502 })
-    const data = await res.json() as { choices?: { message: { content: string } }[] }
-    return NextResponse.json({ answer: data.choices?.[0]?.message?.content?.trim() ?? '', used_stock: stockLines.length, used_history: historyLines.length, used_rag: chunks.length })
+    // OpenAI (ChatGPT) → Anthropic (Claude) → Groq.
+    const { content } = await askAIProvider(
+      systemPrompt,
+      [{ role: 'user', content: `${context}\n\nNurse question: ${body.question.trim()}` }],
+      500,
+    )
+    return NextResponse.json({ answer: content.trim(), used_stock: stockLines.length, used_history: historyLines.length, used_rag: chunks.length })
   } catch (err) {
     console.error('[nurse/ask-ai]', err)
     return NextResponse.json({ error: 'AI request failed' }, { status: 500 })
