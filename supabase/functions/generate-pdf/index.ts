@@ -11,6 +11,8 @@ const ALLOWED_DOC_TYPES = [
   'lesson_plan', 'record_of_work', 'tod_report', 'nurse_record', 'gc_case_file',
   // Branded official documents:
   'exeat', 'timetable', 'meeting_minutes',
+  // Printable, laminate-ready classroom attendance QR (Genesis):
+  'classroom_qr',
 ]
 
 // Doc types that render via the generic branded template renderer.
@@ -65,14 +67,36 @@ serve(async (req: Request) => {
       })
     }
 
-    const html     = generateDocumentHtml(docType, data)
-    const fileName = `${docType}_${auth.userId}_${Date.now()}.html`
-
     const { createClient } = await import('https://esm.sh/@supabase/supabase-js@2')
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     )
+
+    // classroom_qr renders an embedded QR image (async) and self-resolves the school
+    // branding + class QR payload from the DB so a minimal { class_id } call works.
+    let html: string
+    if (docType === 'classroom_qr') {
+      const d = { ...data }
+      const { data: tc } = await supabase.from('tenant_configs')
+        .select('name, logo_url, motto').eq('school_id', auth.schoolId).maybeSingle()
+      if (tc) {
+        d.schoolName = d.schoolName ?? tc.name
+        d.logoUrl    = d.logoUrl    ?? tc.logo_url
+        d.motto      = d.motto      ?? tc.motto
+      }
+      if (!d.qrPayload && (d.class_id || d.className)) {
+        let q = supabase.from('class_qr_tokens')
+          .select('class_name, qr_payload').eq('school_id', auth.schoolId).eq('is_active', true)
+        q = d.class_id ? q.eq('class_id', d.class_id) : q.eq('class_name', d.className)
+        const { data: tok } = await q.order('generated_at', { ascending: false }).limit(1).maybeSingle()
+        if (tok) { d.qrPayload = tok.qr_payload; d.className = d.className ?? tok.class_name }
+      }
+      html = await classroomQrHtml(d)
+    } else {
+      html = generateDocumentHtml(docType, data)
+    }
+    const fileName = `${docType}_${auth.userId}_${Date.now()}.html`
 
     const { error } = await supabase.storage
       .from('documents')
@@ -421,6 +445,68 @@ const TITLES: Record<string, string> = {
 
 function esc(v: unknown): string {
   return String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+/**
+ * Printable, laminate-ready classroom attendance QR (for Genesis physical placement).
+ * Layout: school crest + name on top, the CLASS NAME large, then the QR as the single
+ * dominant element (≈70% page width, generous white quiet zone, high error-correction
+ * so lamination/print wear still scans). The QR is NEVER overlaid/obscured — branding
+ * sits above and below it. One page per class; A4 portrait.
+ *
+ * data: { schoolName, className, logoUrl, qrPayload, knecCode?, motto?, roomId? }
+ */
+// deno-lint-ignore no-explicit-any
+async function classroomQrHtml(d: Record<string, any>): Promise<string> {
+  const payload = String(d.qrPayload ?? d.payload ?? '')
+  let qrSvg = ''
+  try {
+    // qrcode-generator is pure JS (Deno-friendly) and emits scalable SVG — vector
+    // output stays crisp at any print size and survives lamination better than PNG.
+    const mod = await import('https://esm.sh/qrcode-generator@1.4.4')
+    const qrcode = (mod.default ?? mod) as (t: number, e: string) => { addData: (s: string) => void; make: () => void; createSvgTag: (o: Record<string, unknown>) => string }
+    const qr = qrcode(0, 'Q')
+    qr.addData(payload)
+    qr.make()
+    qrSvg = qr.createSvgTag({ cellSize: 8, margin: 2, scalable: true })
+  } catch (e) {
+    console.error('[generate-pdf] qr encode', e)
+  }
+  const crest = d.logoUrl
+    ? `<img src="${esc(d.logoUrl)}" alt="crest" style="height:96px;width:auto;object-fit:contain" />`
+    : ''
+  const qrImg = qrSvg
+    ? `<div style="width:72%;max-width:520px;margin:18px auto">${qrSvg}</div>`
+    : `<div style="padding:60px;border:2px dashed #999;color:#999">QR unavailable (no payload)</div>`
+
+  return `<!DOCTYPE html><html><head><meta charset="utf-8" /><style>
+    @page { size: A4 portrait; margin: 14mm; }
+    * { box-sizing: border-box; }
+    body { font-family: Arial, Helvetica, sans-serif; color:#0b1320; text-align:center; margin:0; }
+    .card { border:3px solid #0b1320; border-radius:14px; padding:26px 22px; min-height:262mm; display:flex; flex-direction:column; }
+    .crest { margin-bottom:6px; }
+    .school { font-size:20px; font-weight:700; text-transform:uppercase; letter-spacing:.3px; }
+    .knec { font-size:12px; color:#555; margin-top:2px; }
+    .label { margin-top:14px; font-size:15px; letter-spacing:3px; color:#1e40af; font-weight:700; }
+    .class { font-size:46px; font-weight:800; margin:4px 0 2px; }
+    .room { font-size:14px; color:#444; }
+    .qrwrap { flex:1; display:flex; align-items:center; justify-content:center; }
+    .hint { font-size:13px; color:#333; margin-top:6px; }
+    .footer { margin-top:10px; padding-top:8px; border-top:1px solid #ccc; font-size:10px; color:#777; }
+  </style></head><body>
+    <div class="card">
+      <div class="crest">${crest}</div>
+      <div class="school">${esc(d.schoolName ?? '')}</div>
+      ${d.knecCode ? `<div class="knec">KNEC Code: ${esc(d.knecCode)}</div>` : ''}
+      <div class="label">CLASS ATTENDANCE QR</div>
+      <div class="class">${esc(d.className ?? '')}</div>
+      ${d.roomId ? `<div class="room">Room: ${esc(d.roomId)}</div>` : ''}
+      <div class="qrwrap">${qrImg}</div>
+      <div class="hint">Teachers: scan at the start of your lesson, from inside this classroom.</div>
+      ${d.motto ? `<div class="hint" style="font-style:italic">${esc(d.motto)}</div>` : ''}
+      <div class="footer">Generated by Sychar &middot; ${new Date().toLocaleDateString('en-KE')}</div>
+    </div>
+  </body></html>`
 }
 
 // deno-lint-ignore no-explicit-any
