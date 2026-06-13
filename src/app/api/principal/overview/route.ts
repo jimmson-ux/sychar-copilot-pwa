@@ -44,6 +44,11 @@ export async function GET() {
     aiInsightsRes,
     subscriptionRes,
     feesRes,
+    maintOpenRes,
+    incidentsOpenRes,
+    claimsReviewRes,
+    welfareOpenRes,
+    requisitionsPendingRes,
   ] = await Promise.all([
     // Total students
     sb.from('students')
@@ -103,6 +108,18 @@ export async function GET() {
           .order('payment_date', { ascending: false })
           .limit(100)
       : Promise.resolve({ data: null, error: null }),
+
+    // Operations & oversight (Sprint 6)
+    sb.from('maintenance_requests').select('id', { count: 'exact', head: true })
+      .eq('school_id', schoolId).not('status', 'in', '(completed,verified)'),
+    sb.from('incident_reports').select('id', { count: 'exact', head: true })
+      .eq('school_id', schoolId).neq('status', 'resolved'),
+    sb.from('payment_claims').select('id', { count: 'exact', head: true })
+      .eq('school_id', schoolId).in('status', ['pending', 'matched']),
+    sb.from('safeguard_cases').select('id', { count: 'exact', head: true })
+      .eq('school_id', schoolId).neq('status', 'resolved'),
+    sb.from('requisitions').select('id', { count: 'exact', head: true })
+      .eq('school_id', schoolId).eq('status', 'pending'),
   ])
 
   // Compile discipline week severity breakdown
@@ -158,5 +175,12 @@ export async function GET() {
     notices:          noticesRes.data ?? [],
     subscription,
     feeSummary,       // null for non-principals
+    operations: {
+      open_maintenance:        maintOpenRes.count ?? 0,
+      open_incidents:          incidentsOpenRes.count ?? 0,
+      payment_claims_to_review: claimsReviewRes.count ?? 0,
+      open_welfare_cases:      welfareOpenRes.count ?? 0,
+      pending_requisitions:    requisitionsPendingRes.count ?? 0,
+    },
   })
 }
