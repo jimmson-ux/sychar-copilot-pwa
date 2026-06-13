@@ -20,18 +20,22 @@ export function deputyConfigFromFeatures(features: Record<string, unknown> | nul
   }
 }
 
+// A single-deputy school may seed its one deputy under ANY of these sub_roles
+// (e.g. PCEA's sole deputy is `deputy_principal_admin`), so the fan-out must cover all.
+const ANY_DEPUTY = ['deputy_principal', 'deputy_principal_admin', 'deputy_principal_academic']
+
 /** Academic concerns (timetable, marks, syllabus, lessons). */
 export function academicTargets(cfg: DeputyConfig): string[] {
   return cfg.dualDeputy
     ? ['deputy_principal_academic', 'deputy_principal']
-    : ['deputy_principal']
+    : ANY_DEPUTY
 }
 
 /** Administrative concerns (discipline, attendance, dorms, visitors, leave-outs). */
 export function adminTargets(cfg: DeputyConfig): string[] {
   return cfg.dualDeputy
     ? ['deputy_principal_admin', 'deputy_principal']
-    : ['deputy_principal']
+    : ANY_DEPUTY
 }
 
 /** Daily academic operations (lesson monitoring, scheme coverage, marks submission). */
