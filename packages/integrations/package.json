@@ -1,0 +1,25 @@
+{
+  "name": "@sychar/integrations",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Per-school analytics & integration kit (PostHog, Microsoft Clarity, Firebase, Upstash Redis, QStash). Config-injected — every school passes its OWN project keys so nothing is shared but the Supabase DB. Vendored into each school PWA via scripts/sync-core.mjs. NO framework imports.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*.ts"
+  },
+  "peerDependencies": {
+    "posthog-js": "*",
+    "@microsoft/clarity": "*",
+    "firebase": "*",
+    "@upstash/redis": "*",
+    "@upstash/qstash": "*"
+  },
+  "peerDependenciesMeta": {
+    "posthog-js": { "optional": true },
+    "@microsoft/clarity": { "optional": true },
+    "firebase": { "optional": true },
+    "@upstash/redis": { "optional": true },
+    "@upstash/qstash": { "optional": true }
+  }
+}
