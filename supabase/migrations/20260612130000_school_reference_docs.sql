@@ -59,10 +59,29 @@ CREATE POLICY school_ref_docs_service ON public.school_reference_docs
 
 -- ── 2. Gender profile ───────────────────────────────────────────
 -- 'mixed' (default) | 'boys' | 'girls'
-ALTER TABLE public.school_metadata
-  ADD COLUMN IF NOT EXISTS gender_profile text NOT NULL DEFAULT 'mixed'
-    CHECK (gender_profile IN ('mixed','boys','girls'));
+-- school_metadata is an optional/legacy store that does not exist on every
+-- deployment — guard the ALTER so this migration never errors (and so future
+-- onboarding of a fresh project applies cleanly). tenant_configs always exists.
+DO $$
+BEGIN
+  IF to_regclass('public.school_metadata') IS NOT NULL THEN
+    ALTER TABLE public.school_metadata
+      ADD COLUMN IF NOT EXISTS gender_profile text NOT NULL DEFAULT 'mixed';
+    BEGIN
+      ALTER TABLE public.school_metadata
+        ADD CONSTRAINT school_metadata_gender_profile_chk
+        CHECK (gender_profile IN ('mixed','boys','girls'));
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END;
+  END IF;
+END $$;
 
 ALTER TABLE public.tenant_configs
-  ADD COLUMN IF NOT EXISTS gender_profile text NOT NULL DEFAULT 'mixed'
+  ADD COLUMN IF NOT EXISTS gender_profile text NOT NULL DEFAULT 'mixed';
+DO $$
+BEGIN
+  ALTER TABLE public.tenant_configs
+    ADD CONSTRAINT tenant_configs_gender_profile_chk
     CHECK (gender_profile IN ('mixed','boys','girls'));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
