@@ -8,6 +8,7 @@ import { requireAuth } from '@/lib/requireAuth'
 import { fetchHodData } from '@/lib/hodData'
 import { corsHeaders, handleCors } from '@/lib/cors'
 import { rateLimit, LIMITS } from '@/lib/rateLimit'
+import { askAIProvider } from '@/lib/aiProvider'
 
 function getClient() {
   return createClient(
@@ -69,11 +70,6 @@ export async function POST(req: Request) {
   const auth = await requireAuth()
   if (auth.unauthorized) return auth.unauthorized
 
-  const groqKey = process.env.GROQ_API_KEY
-  if (!groqKey) {
-    console.error('[hod/insights] GROQ_API_KEY not set')
-    return NextResponse.json({ error: 'Server misconfigured' }, { status: 500 })
-  }
 
   try {
     // Fetch HOD data directly (no internal HTTP hop needed — same process)
@@ -165,27 +161,15 @@ Return ONLY valid JSON:
   ]
 }`
 
-    const aiRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${groqKey}`,
-      },
-      body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
-        max_tokens: 2048,
-        messages: [{ role: 'user', content: prompt }],
-      }),
-    })
-
-    if (!aiRes.ok) {
-      const body = await aiRes.text()
-      console.error('[hod/insights] Groq error:', aiRes.status, body.slice(0, 200))
+    let rawText: string
+    try {
+      // OpenAI (ChatGPT) → Anthropic (Claude) → Groq.
+      const ai = await askAIProvider('You are an academic data analyst for a Kenyan secondary school.', [{ role: 'user', content: prompt }], 2048)
+      rawText = ai.content
+    } catch (e) {
+      console.error('[hod/insights] AI error:', (e as Error).message)
       return NextResponse.json({ error: 'AI service unavailable' }, { status: 502 })
     }
-
-    const aiData = await aiRes.json() as { choices?: { message: { content: string } }[] }
-    const rawText: string = aiData.choices?.[0]?.message?.content ?? ''
     const jsonStr = rawText.replace(/^```json\s*/i, '').replace(/\s*```$/i, '').trim()
 
     let parsed: { insights: RawInsight[] }

@@ -8,6 +8,7 @@ import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/requireAuth'
 import { rateLimit, LIMITS } from '@/lib/rateLimit'
+import { askAIProvider } from '@/lib/aiProvider'
 
 function svc() {
   return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
@@ -36,10 +37,6 @@ export async function POST(req: Request) {
 
   if (!body.studentId) {
     return NextResponse.json({ error: 'studentId required' }, { status: 400 })
-  }
-
-  if (!process.env.GROQ_API_KEY) {
-    return NextResponse.json({ error: 'AI service not configured' }, { status: 503 })
   }
 
   const db = svc()
@@ -111,18 +108,12 @@ Last 30 days:
 - Discipline incidents: ${discipline.length} total, ${severeDiscipline} severe (critical/major)
 `.trim()
 
-  const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'llama-3.1-8b-instant',
-      max_tokens: 400,
-      messages: [{
-        role: 'user',
-        content: `You are a student welfare AI for a Kenyan secondary school. Assess this student's welfare risk.
+  let rawText = '{}'
+  try {
+    // OpenAI (ChatGPT) → Anthropic (Claude) → Groq.
+    const ai = await askAIProvider(
+      'You are a student welfare AI for a Kenyan secondary school.',
+      [{ role: 'user', content: `Assess this student's welfare risk.
 
 ${context}
 
@@ -133,13 +124,13 @@ Return ONLY valid JSON:
   "recommendation": "1-2 sentence actionable counselor recommendation"
 }
 
-risk_score: 0-100 (0=no concern, 40=monitor, 70=refer, 90=urgent)`,
-      }],
-    }),
-  })
-  if (!groqRes.ok) return NextResponse.json({ error: 'AI service error' }, { status: 502 })
-  const groqData = await groqRes.json() as { choices?: { message: { content: string } }[] }
-  const rawText = groqData.choices?.[0]?.message?.content ?? '{}'
+risk_score: 0-100 (0=no concern, 40=monitor, 70=refer, 90=urgent)` }],
+      400,
+    )
+    rawText = ai.content || '{}'
+  } catch {
+    return NextResponse.json({ error: 'AI service error' }, { status: 502 })
+  }
   let aiResult: { risk_score?: number; risk_factors?: string[]; recommendation?: string }
   try {
     aiResult = JSON.parse(rawText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim())
