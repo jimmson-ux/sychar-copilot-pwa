@@ -104,5 +104,58 @@ async function backfill(schoolId: string) {
     total += chunks; report.record_of_work = (report.record_of_work ?? 0) + chunks
   }
 
+  // 4. Meeting minutes (minuted meetings — summary + decisions).
+  const { data: meetings } = await svc
+    .from('meetings')
+    .select('id, meeting_type, department, title, summary, decisions, scheduled_at')
+    .eq('school_id', schoolId)
+    .not('summary', 'is', null)
+    .order('minuted_at', { ascending: false })
+    .limit(500)
+  for (const m of (meetings as any[] ?? [])) {
+    const text = [m.meeting_type, m.department, m.title, m.summary,
+      Array.isArray(m.decisions) ? m.decisions.join('; ') : null].filter(Boolean).join(' | ')
+    if (!text) continue
+    const { chunks } = await indexSchoolDocument({
+      schoolId, sourceType: 'meeting_minutes', sourceId: m.id, documentType: 'minutes', text,
+      metadata: { type: m.meeting_type, department: m.department, date: m.scheduled_at },
+    })
+    total += chunks; report.meeting_minutes = (report.meeting_minutes ?? 0) + chunks
+  }
+
+  // 5. Secretary correspondence (incoming/outgoing register — subject + party).
+  const { data: corr } = await svc
+    .from('secretary_correspondence')
+    .select('id, direction, party, subject, correspondence_date')
+    .eq('school_id', schoolId)
+    .order('correspondence_date', { ascending: false })
+    .limit(500)
+  for (const c of (corr as any[] ?? [])) {
+    const text = [c.direction, c.party, c.subject].filter(Boolean).join(' | ')
+    if (!text) continue
+    const { chunks } = await indexSchoolDocument({
+      schoolId, sourceType: 'correspondence', sourceId: c.id, documentType: 'correspondence', text,
+      metadata: { direction: c.direction, party: c.party, date: c.correspondence_date },
+    })
+    total += chunks; report.correspondence = (report.correspondence ?? 0) + chunks
+  }
+
+  // 6. School documents (titles + descriptions; binary content is not embedded).
+  const { data: docs } = await svc
+    .from('school_documents')
+    .select('id, title, description, kind, uploaded_at')
+    .eq('school_id', schoolId)
+    .order('uploaded_at', { ascending: false })
+    .limit(500)
+  for (const d of (docs as any[] ?? [])) {
+    const text = [d.kind, d.title, d.description].filter(Boolean).join(' | ')
+    if (!text) continue
+    const { chunks } = await indexSchoolDocument({
+      schoolId, sourceType: 'school_document', sourceId: d.id, documentType: 'document', text,
+      metadata: { kind: d.kind, title: d.title, date: d.uploaded_at },
+    })
+    total += chunks; report.school_document = (report.school_document ?? 0) + chunks
+  }
+
   return NextResponse.json({ ok: true, total_chunks: total, by_source: report })
 }

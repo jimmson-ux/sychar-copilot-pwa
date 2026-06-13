@@ -26,6 +26,7 @@ export interface FeaturesEnabled {
   nts_management:        boolean
   gate_pass:             boolean
   provisions_store:      boolean
+  secretary_module:      boolean   // Secretary administrative hub (Oloolaiser today)
 }
 
 export interface SchoolContext {
@@ -69,6 +70,7 @@ export const DEFAULT_FEATURES: FeaturesEnabled = {
   nts_management:        false,
   gate_pass:             true,
   provisions_store:      false,
+  secretary_module:      false,
 }
 
 export const DEFAULT_CONTEXT: SchoolContext = {

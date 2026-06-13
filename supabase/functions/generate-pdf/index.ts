@@ -10,13 +10,13 @@ const ALLOWED_DOC_TYPES = [
   // Synthesized branded templates (Phase 5):
   'lesson_plan', 'record_of_work', 'tod_report', 'nurse_record', 'gc_case_file',
   // Branded official documents:
-  'exeat', 'timetable',
+  'exeat', 'timetable', 'meeting_minutes',
 ]
 
 // Doc types that render via the generic branded template renderer.
 const BRANDED_TEMPLATE_TYPES = new Set([
   'lesson_plan', 'record_of_work', 'tod_report', 'nurse_record', 'gc_case_file',
-  'exeat', 'timetable',
+  'exeat', 'timetable', 'meeting_minutes',
 ])
 
 const CSS = `
@@ -416,6 +416,7 @@ const TITLES: Record<string, string> = {
   gc_case_file:   'GUIDANCE & COUNSELLING CASE FILE',
   exeat:          'EXEAT / LEAVE-OUT FORM',
   timetable:      'CLASS TIMETABLE',
+  meeting_minutes: 'MINUTES OF MEETING',
 }
 
 function esc(v: unknown): string {

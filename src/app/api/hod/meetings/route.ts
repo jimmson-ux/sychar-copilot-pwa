@@ -27,9 +27,10 @@ export async function GET() {
   if (auth.unauthorized) return auth.unauthorized
 
   const svc = createAdminSupabaseClient()
-  let q = svc.from('department_meetings')
-    .select('id, department, title, agenda, scheduled_at, location, minute_taker_id, status, summary, minuted_at, created_at')
+  let q = svc.from('meetings')
+    .select('id, department, title, agenda, scheduled_at, venue, minute_taker_id, status, summary, minuted_at, created_at')
     .eq('school_id', auth.schoolId)
+    .eq('meeting_type', 'department')
     .order('scheduled_at', { ascending: false, nullsFirst: false })
     .limit(100)
 
@@ -62,15 +63,17 @@ export async function POST(req: NextRequest) {
   if (!department) return NextResponse.json({ error: 'No department resolved for your account' }, { status: 400 })
 
   const { data: meeting, error } = await svc
-    .from('department_meetings')
+    .from('meetings')
     .insert({
       school_id: auth.schoolId,
-      hod_id: hodRow?.id ?? null,
+      meeting_type: 'department',
+      convener_id: hodRow?.id ?? null,
+      created_by: hodRow?.id ?? null,
       department,
       title: body.title.trim(),
       agenda: body.agenda ?? null,
       scheduled_at: body.scheduled_at ?? null,
-      location: body.location ?? null,
+      venue: body.location ?? null,
       minute_taker_id: body.minute_taker_id ?? null,
       status: 'scheduled',
     })

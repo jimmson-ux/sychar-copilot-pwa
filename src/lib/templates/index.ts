@@ -11,6 +11,7 @@ import { RECORD_OF_WORK_CBC, RECORD_OF_WORK_844, resolveRecordOfWorkTemplate } f
 import { TOD_DAILY_REPORT } from './tod'
 import { COUNSELLING_MIXED, COUNSELLING_SINGLE, resolveCounsellingTemplate } from './counselling'
 import { NURSE_HEALTH_RECORD } from './nurse'
+import { MEETING_MINUTES } from './minutes'
 
 export * from './types'
 export {
@@ -19,6 +20,7 @@ export {
   TOD_DAILY_REPORT,
   COUNSELLING_MIXED, COUNSELLING_SINGLE, resolveCounsellingTemplate,
   NURSE_HEALTH_RECORD,
+  MEETING_MINUTES,
 }
 
 export const ALL_TEMPLATES: Template[] = [
@@ -27,6 +29,7 @@ export const ALL_TEMPLATES: Template[] = [
   TOD_DAILY_REPORT,
   COUNSELLING_MIXED, COUNSELLING_SINGLE,
   NURSE_HEALTH_RECORD,
+  MEETING_MINUTES,
 ]
 
 export interface ResolveOpts {
@@ -50,6 +53,8 @@ export function resolveTemplate(docType: string, opts: ResolveOpts = {}): Templa
       return resolveCounsellingTemplate(opts.genderProfile ?? 'mixed')
     case 'nurse_record':
       return NURSE_HEALTH_RECORD
+    case 'meeting_minutes':
+      return MEETING_MINUTES
     default:
       return null
   }

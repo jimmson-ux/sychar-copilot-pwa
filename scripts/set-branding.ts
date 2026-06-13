@@ -2,11 +2,11 @@
  * Ensure all schools have logo + name + motto for document branding.
  * Run: npx tsx scripts/set-branding.ts
  *
- * - Uploads the Oloolaiser crest (public/branding/oloolaiser-crest.png) to the
- *   shared school-gallery bucket and points tenant_configs.logo_url at it.
- * - Sets mottos: Oloolaiser "Study for Service" (from crest), PCEA "Juhudi Ni Fanaka".
- *   Nkoroi motto ("Excellence Through Discipline") already set.
- * - Nkoroi logo image not supplied → logo_url left as-is (flagged).
+ * - Uploads the Oloolaiser crest (public/branding/oloolaiser-crest.png) and the
+ *   Nkoroi crest (public/branding/nkoroi-crest.jpg) to the shared school-gallery
+ *   bucket and points each tenant_configs.logo_url at it.
+ * - Sets mottos: Oloolaiser "Study for Service" (from crest), PCEA "Juhudi Ni Fanaka",
+ *   Nkoroi "Service Beyond Self" (from crest). All 3 schools now have logo + name + motto.
  */
 import { readFileSync } from 'node:fs'
 import { createClient } from '@supabase/supabase-js'
@@ -34,11 +34,25 @@ async function main() {
     }
   } catch (e) { console.log('  ⚠️ crest read:', (e as Error).message) }
 
+  // 1b. Upload Nkoroi crest → school-gallery/branding/nkoroi-crest.jpg
+  let nkLogo: string | null = null
+  try {
+    const buf = readFileSync('public/branding/nkoroi-crest.jpg')
+    const path = 'branding/nkoroi-crest.jpg'
+    const up = await db.storage.from('school-gallery').upload(path, buf, { contentType: 'image/jpeg', upsert: true })
+    if (up.error) console.log('  ⚠️ nkoroi crest upload:', up.error.message)
+    else {
+      const { data } = db.storage.from('school-gallery').getPublicUrl(path)
+      nkLogo = data.publicUrl
+      console.log('  ✓ nkoroi crest uploaded →', nkLogo)
+    }
+  } catch (e) { console.log('  ⚠️ nkoroi crest read:', (e as Error).message) }
+
   // 2. Branding per school (motto + logo). name comes from tenant_configs.name (set).
   const updates: Array<[string, string, Record<string, unknown>]> = [
     ['Oloolaiser', OL, { motto: 'Study for Service', logo_url: oloLogo }],
     ['PCEA Upper Matasia', MT, { motto: 'Juhudi Ni Fanaka' }],
-    ['Nkoroi', NK, { motto: 'Excellence Through Discipline' }],
+    ['Nkoroi', NK, { motto: 'Service Beyond Self', ...(nkLogo ? { logo_url: nkLogo } : {}) }],
   ]
   for (const [label, id, patch] of updates) {
     const { error } = await db.from('tenant_configs').update(patch).eq('school_id', id)
