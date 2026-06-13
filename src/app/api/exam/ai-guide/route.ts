@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { z } from 'zod'
 import { validateTeacherToken } from '@/lib/validateTeacherToken'
+import { askAIProvider } from '@/lib/aiProvider'
 
 const AiGuideSchema = z.object({
   token:        z.string().min(8),
@@ -99,26 +100,13 @@ Generate a practical AI Teaching Guide. Return ONLY valid JSON (no markdown):
 
   let guide: Record<string, unknown>
   try {
-    const aiRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${groqKey}`,
-      },
-      body: JSON.stringify({
-        model: 'llama-3.1-8b-instant',
-        max_tokens: 2048,
-        messages: [{ role: 'user', content: prompt }],
-      }),
-    })
-
-    if (!aiRes.ok) {
-      console.error('[exam/ai-guide] Groq error:', aiRes.status)
+    let raw = '{}'
+    try {
+      const ai = await askAIProvider('You are an exam revision guide generator for a Kenyan secondary school.', [{ role: 'user', content: prompt }], 2048)
+      raw = ai.content || '{}'
+    } catch {
       return NextResponse.json({ error: 'AI service unavailable' }, { status: 502 })
     }
-
-    const aiData = await aiRes.json() as { choices?: { message: { content: string } }[] }
-    const raw = aiData.choices?.[0]?.message?.content ?? '{}'
     const clean = raw.replace(/^```json\s*/i, '').replace(/\s*```$/i, '').trim()
     guide = JSON.parse(clean)
   } catch {

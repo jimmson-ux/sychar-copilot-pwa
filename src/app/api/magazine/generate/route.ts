@@ -5,6 +5,7 @@ export const dynamic = 'force-dynamic'
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/requireAuth'
+import { askAIProvider } from '@/lib/aiProvider'
 
 function svc() {
   return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
@@ -24,22 +25,12 @@ async function generateCaption(
 Event: "${photo.eventName}" on ${photo.date}.
 Be positive, celebratory, and specific to the event. No hashtags.`
 
-  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
-    body: JSON.stringify({
-      model: 'llama-3.1-8b-instant',
-      max_tokens: 60,
-      messages: [
-        { role: 'system', content: 'You write short, energetic captions for school event photos in Kenya. Return only the caption text.' },
-        { role: 'user', content: prompt },
-      ],
-    }),
-  })
-
-  if (!res.ok) return `${photo.eventName} — A memorable moment.`
-  const data = await res.json() as { choices?: { message: { content: string } }[] }
-  return data.choices?.[0]?.message?.content?.trim() ?? `${photo.eventName} — A memorable moment.`
+  try {
+    const ai = await askAIProvider('You write short, energetic captions for school event photos in Kenya. Return only the caption text.', [{ role: 'user', content: prompt }], 60)
+    return ai.content?.trim() || `${photo.eventName} — A memorable moment.`
+  } catch {
+    return `${photo.eventName} — A memorable moment.`
+  }
 }
 
 async function generateEditorial(
@@ -72,19 +63,6 @@ Return ONLY valid JSON:
 Key highlights this term: ${highlightsList || 'Academic achievement, sports competitions, school events'}
 Write in warm, school-community English appropriate for parents and students.`
 
-  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
-    body: JSON.stringify({
-      model: 'llama-3.1-8b-instant',
-      max_tokens: 1000,
-      messages: [
-        { role: 'system', content: 'You write warm, celebratory school magazine content for Kenyan secondary schools. Return only valid JSON.' },
-        { role: 'user', content: prompt },
-      ],
-    }),
-  })
-
   const fallback = {
     editorial: `${termLabel} has been a remarkable term at ${schoolName}. Our students have shown exceptional dedication in academics, sports, and co-curricular activities. The school community has come together to create memories that will last a lifetime. We are proud of every achievement, big or small.`,
     academicStars: 'Our academic stars this term have demonstrated outstanding commitment to excellence.',
@@ -92,10 +70,12 @@ Write in warm, school-community English appropriate for parents and students.`
     upcomingTeaser: 'Next term promises even more exciting activities. Stay tuned!',
   }
 
-  if (!res.ok) return fallback
-
-  const data = await res.json() as { choices?: { message: { content: string } }[] }
-  const text = data.choices?.[0]?.message?.content ?? ''
+  let text = ''
+  try {
+    const ai = await askAIProvider('You write warm, celebratory school magazine content for Kenyan secondary schools. Return only valid JSON.', [{ role: 'user', content: prompt }], 1000)
+    text = ai.content ?? ''
+  } catch { return fallback }
+  if (!text) return fallback
 
   try {
     const jsonMatch = text.match(/\{[\s\S]*\}/)

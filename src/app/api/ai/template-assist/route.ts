@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/requireAuth'
 import { buildSchoolSystemPrompt } from '@/lib/aiSchoolContext'
+import { askAIProvider } from '@/lib/aiProvider'
 
 export const dynamic = 'force-dynamic'
 
@@ -38,22 +39,11 @@ export async function POST(req: NextRequest) {
       (body.instruction ? `Instruction: ${body.instruction}\n` : '') +
       (body.context ? `Context so far: ${JSON.stringify(body.context).slice(0, 2000)}` : '')
 
-    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${groqKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
-        max_tokens: 350,
-        temperature: 0.4,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userMsg },
-        ],
-      }),
-    })
-    if (!res.ok) return NextResponse.json({ error: 'AI request failed' }, { status: 502 })
-    const data = await res.json() as { choices?: { message: { content: string } }[] }
-    const suggestion = data.choices?.[0]?.message?.content?.trim() ?? ''
+    let suggestion = ''
+    try {
+      const ai = await askAIProvider(systemPrompt, [{ role: 'user', content: userMsg }], 350)
+      suggestion = ai.content.trim()
+    } catch { return NextResponse.json({ error: 'AI request failed' }, { status: 502 }) }
     return NextResponse.json({ suggestion, draft: true })
   } catch (err) {
     console.error('[ai/template-assist]', err)
