@@ -172,11 +172,13 @@ async function main() {
   const SCHOOL_ID = school.id
   console.log(`Oloolaiser school_id = ${SCHOOL_ID}`)
 
-  // Idempotency guard
+  // Idempotency: students are only inserted once (guarded below). Config, classes,
+  // reference docs and terms are all idempotent (upsert/update) so they ALWAYS run —
+  // this re-applies them on a school that was partially seeded earlier.
   const { count: existing } = await db.from('students').select('id', { count: 'exact', head: true }).eq('school_id', SCHOOL_ID)
-  if ((existing ?? 0) > 0) {
-    console.log(`⚠️  ${existing} students already exist for Oloolaiser — aborting to avoid duplicates.`)
-    return
+  const studentsAlreadySeeded = (existing ?? 0) > 0
+  if (studentsAlreadySeeded) {
+    console.log(`ℹ️  ${existing} students already exist — skipping student insert; re-applying config/classes/refs/terms (idempotent).`)
   }
 
   // 1. Config
@@ -204,43 +206,47 @@ async function main() {
   }
   console.log(`  classes: ${classId.size}`)
 
-  // 3. Students (all boys)
-  console.log(`Seeding ${OLOOLAISER_EXPECTED_TOTAL} students...`)
-  const students = OLOOLAISER_STREAMS.flatMap((s) =>
-    s.students.map(([adm, name]) => ({
-      school_id: SCHOOL_ID,
-      class_id: classId.get(s.class_name)!,
-      class_name: s.class_name,
-      full_name: name,
-      admission_no: adm,
-      admission_number: adm,
-      gender: 'male',
-      form: s.form,
-      grade: s.grade,
-      pathway: 'Not_Applicable',
-      is_active: true,
-      is_in_school: false,
-    })),
-  )
-  // admission_no = display (may duplicate, e.g. ADM 8909 / 9359);
-  // admission_number = unique key — suffix on collision so both flagged dups survive.
-  const seen = new Set<string>()
-  for (const s of students) {
-    let key = s.admission_number
-    let n = 1
-    while (seen.has(key)) key = `${s.admission_number}-${++n}`
-    seen.add(key)
-    s.admission_number = key
+  // 3. Students (all boys) — only on first seed.
+  if (studentsAlreadySeeded) {
+    console.log('Skipping student insert (already seeded).')
+  } else {
+    console.log(`Seeding ${OLOOLAISER_EXPECTED_TOTAL} students...`)
+    const students = OLOOLAISER_STREAMS.flatMap((s) =>
+      s.students.map(([adm, name]) => ({
+        school_id: SCHOOL_ID,
+        class_id: classId.get(s.class_name)!,
+        class_name: s.class_name,
+        full_name: name,
+        admission_no: adm,
+        admission_number: adm,
+        gender: 'male',
+        form: s.form,
+        grade: s.grade,
+        pathway: 'Not_Applicable',
+        is_active: true,
+        is_in_school: false,
+      })),
+    )
+    // admission_no = display (may duplicate, e.g. ADM 8909 / 9359);
+    // admission_number = unique key — suffix on collision so both flagged dups survive.
+    const seen = new Set<string>()
+    for (const s of students) {
+      let key = s.admission_number
+      let n = 1
+      while (seen.has(key)) key = `${s.admission_number}-${++n}`
+      seen.add(key)
+      s.admission_number = key
+    }
+    // Insert in chunks (1,283 rows).
+    let inserted = 0
+    for (let i = 0; i < students.length; i += 200) {
+      const chunk = students.slice(i, i + 200)
+      const { data, error } = await db.from('students').insert(chunk).select('id')
+      if (error) throw new Error(`students chunk ${i}: ${error.message}`)
+      inserted += data?.length ?? 0
+    }
+    console.log(`  inserted ${inserted} students`)
   }
-  // Insert in chunks (1,283 rows).
-  let inserted = 0
-  for (let i = 0; i < students.length; i += 200) {
-    const chunk = students.slice(i, i + 200)
-    const { data, error } = await db.from('students').insert(chunk).select('id')
-    if (error) throw new Error(`students chunk ${i}: ${error.message}`)
-    inserted += data?.length ?? 0
-  }
-  console.log(`  inserted ${inserted} students`)
 
   // 4. Reference docs
   console.log('Seeding reference docs (rules / CBE combinations / duty rota)...')
