@@ -6,6 +6,7 @@ export const dynamic = 'force-dynamic'
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/requireAuth'
+import { askAIProvider } from '@/lib/aiProvider'
 
 function svc() {
   return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
@@ -55,25 +56,11 @@ Return ONLY valid JSON (no markdown, no explanation):
   "recommendations": ["<1 actionable improvement per weak subject>"]
 }`
 
-  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'llama-3.1-8b-instant',
-      max_tokens: 600,
-      messages: [
-        { role: 'system', content: 'You are a Kenyan secondary school academic analyst. Return only valid JSON.' },
-        { role: 'user', content: prompt },
-      ],
-    }),
-  })
-
-  if (!res.ok) return null
-  const data = await res.json() as { choices?: { message: { content: string } }[] }
-  const text = data.choices?.[0]?.message?.content ?? ''
+  let text = ''
+  try {
+    const ai = await askAIProvider('You are a Kenyan secondary school academic analyst. Return only valid JSON.', [{ role: 'user', content: prompt }], 600)
+    text = ai.content ?? ''
+  } catch { return null }
 
   try {
     const jsonMatch = text.match(/\{[\s\S]*\}/)

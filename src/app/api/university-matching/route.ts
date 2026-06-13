@@ -4,6 +4,7 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/requireAuth'
+import { askAIProvider } from '@/lib/aiProvider'
 import { corsHeaders, handleCors } from '@/lib/cors'
 import { rateLimit, LIMITS } from '@/lib/rateLimit'
 
@@ -196,27 +197,12 @@ export async function POST(req: Request) {
       .maybeSingle()
 
     // 3. Call Groq
-    const aiRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${groqKey}`,
-      },
-      body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
-        max_tokens: 4096,
-        messages: [{ role: 'user', content: buildPrompt(student as StudentRow, prediction as PredictionRow | null) }],
-      }),
-    })
-
-    if (!aiRes.ok) {
-      const errBody = await aiRes.text()
-      console.error('[university-matching] Groq error:', aiRes.status, errBody.slice(0, 200))
-      throw new Error('AI service unavailable')
-    }
-
-    const aiData = await aiRes.json() as { choices?: { message: { content: string } }[] }
-    const rawText = aiData.choices?.[0]?.message?.content ?? ''
+    const ai = await askAIProvider(
+      'You are a Kenyan university-placement (KUCCPS) advisor.',
+      [{ role: 'user', content: buildPrompt(student as StudentRow, prediction as PredictionRow | null) }],
+      4096,
+    )
+    const rawText = ai.content ?? ''
     const jsonStr = rawText.replace(/^```json\s*/i, '').replace(/\s*```$/i, '').trim()
 
     let parsed: UniversityMatchResult

@@ -6,6 +6,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/requireAuth'
+import { askAIProvider } from '@/lib/aiProvider'
 import { createAdminSupabaseClient } from '@/lib/supabase-server'
 import { updatePrincipalSeatingSummary } from '@/lib/seating-summary'
 
@@ -219,18 +220,8 @@ RULES:
   let analysis: Record<string, unknown>
 
   try {
-    const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
-        max_tokens: 2000,
-        messages: [{ role: 'user', content: prompt }],
-      }),
-    })
-    if (!groqRes.ok) throw new Error(`Groq error ${groqRes.status}`)
-    const groqData = await groqRes.json() as { choices?: { message: { content: string } }[] }
-    const raw = groqData.choices?.[0]?.message?.content ?? ''
+    const ai = await askAIProvider('You are a classroom seating-optimisation assistant for a Kenyan secondary school.', [{ role: 'user', content: prompt }], 2000)
+    const raw = ai.content ?? ''
     const match = raw.match(/\{[\s\S]*\}/)
     if (!match) throw new Error('No JSON in response')
     analysis = JSON.parse(match[0])

@@ -8,6 +8,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/requireAuth'
+import { askAIProvider } from '@/lib/aiProvider'
 import { createAdminSupabaseClient } from '@/lib/supabase-server'
 import { generateText } from 'ai'
 import { google } from '@ai-sdk/google'
@@ -93,15 +94,8 @@ Format as plain text with proper paragraphs. No markdown. No placeholders in squ
     let letterText: string
     const groqKey = process.env.GROQ_API_KEY
     try {
-      if (!groqKey) throw new Error('no key')
-      const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${groqKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: 'llama-3.3-70b-versatile', max_tokens: 1000, messages: [{ role: 'user', content: prompt }] }),
-      })
-      if (!groqRes.ok) throw new Error('Groq error')
-      const groqData = await groqRes.json() as { choices?: { message: { content: string } }[] }
-      letterText = groqData.choices?.[0]?.message?.content?.trim() ?? ''
+      const ai = await askAIProvider('You are a Kenyan secondary school administrator drafting formal disciplinary letters.', [{ role: 'user', content: prompt }], 1000)
+      letterText = ai.content?.trim() ?? ''
       if (!letterText) throw new Error('empty')
     } catch {
       const r = await generateText({ model: google('gemini-2.0-flash'), prompt, maxOutputTokens: 1000 })
