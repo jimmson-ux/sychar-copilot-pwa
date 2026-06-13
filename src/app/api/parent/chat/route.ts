@@ -8,8 +8,7 @@ export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireParentAuth } from '@/middleware/verifyParentJWT'
 import { createAdminSupabaseClient } from '@/lib/supabase-server'
-
-const MODEL = 'llama-3.1-8b-instant'
+import { askAIProvider } from '@/lib/aiProvider'
 
 function detectLanguage(text: string): 'sw' | 'en' {
   const swahiliWords = /\b(habari|mtoto|shule|malipo|ada|damu|mwalimu|darasa|hesabu|jibu|tafadhali|asante|karibu|sawa)\b/i
@@ -124,31 +123,13 @@ Attendance (last 14 days): ${attendRate !== null ? `${attendRate}% present` : 'N
 Recent marks: ${marksSummary || 'No recent marks'}
 `.trim()
 
-  const groqKey = process.env.GROQ_API_KEY
-  if (!groqKey) return NextResponse.json({ error: 'AI service unavailable' }, { status: 503 })
-
-  const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      Authorization:  `Bearer ${groqKey}`,
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      max_tokens: 400,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: `${contextBlock}\n\nParent asks: ${message}` },
-      ],
-    }),
-  })
-
-  if (!resp.ok) {
+  let reply = ''
+  try {
+    const out = await askAIProvider(systemPrompt, [{ role: 'user', content: `${contextBlock}\n\nParent asks: ${message}` }], 400)
+    reply = out.content.trim()
+  } catch {
     return NextResponse.json({ error: 'AI service unavailable' }, { status: 502 })
   }
-
-  const ai      = await resp.json() as { choices?: { message: { content: string } }[] }
-  const reply   = (ai.choices?.[0]?.message?.content ?? '').trim()
   const context = classifyContext(message)
   const sentiment = detectSentiment(message)
   const topics    = [context]

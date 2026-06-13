@@ -5,6 +5,7 @@ export const dynamic = 'force-dynamic'
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/requireAuth'
+import { askAIProvider } from '@/lib/aiProvider'
 
 function svc() {
   return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
@@ -208,23 +209,11 @@ Format the report in professional Kenyan school English with these sections:
 
 Use formal tone appropriate for a Board of Management presentation. No markdown, plain paragraphs under each heading.`
 
-  const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${GROQ_API_KEY}`, 'content-type': 'application/json' },
-    body: JSON.stringify({
-      model:      'llama-3.1-8b-instant',
-      max_tokens: 1200,
-      messages: [
-        { role: 'system', content: 'You are an expert Kenyan school management consultant writing formal Board of Management reports.' },
-        { role: 'user', content: prompt },
-      ],
-    }),
-  })
-
-  const groqData = groqRes.ok
-    ? await groqRes.json() as { choices?: { message: { content: string } }[] }
-    : { choices: [] }
-  const narrative = groqData.choices?.[0]?.message?.content ?? 'Report generation failed.'
+  let narrative = 'Report generation failed.'
+  try {
+    const ai = await askAIProvider('You are an expert Kenyan school management consultant writing formal Board of Management reports.', [{ role: 'user', content: prompt }], 1200)
+    if (ai.content) narrative = ai.content
+  } catch { /* keep fallback */ }
 
   const reportPayload = {
     school_id:    sid,

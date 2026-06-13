@@ -5,6 +5,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/requireAuth'
+import { askAIProvider } from '@/lib/aiProvider'
 import { createAdminSupabaseClient } from '@/lib/supabase-server'
 
 export async function POST(
@@ -69,18 +70,8 @@ Format with clear headers. Total length: 350-500 words.`
 
   let aiText = ''
   try {
-    const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${groqKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'llama-3.1-8b-instant',
-        max_tokens: 1024,
-        messages: [{ role: 'user', content: prompt }],
-      }),
-    })
-    if (!groqRes.ok) throw new Error(`Groq error ${groqRes.status}`)
-    const groqData = await groqRes.json() as { choices?: { message: { content: string } }[] }
-    aiText = groqData.choices?.[0]?.message?.content ?? ''
+    const ai = await askAIProvider('You are a lesson-plan generator for a Kenyan secondary school.', [{ role: 'user', content: prompt }], 1024)
+    aiText = ai.content ?? ''
   } catch {
     return NextResponse.json({ error: 'AI generation failed' }, { status: 502 })
   }

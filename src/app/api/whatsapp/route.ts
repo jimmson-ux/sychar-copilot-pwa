@@ -6,6 +6,7 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 import { rateLimit, LIMITS } from '@/lib/rateLimit'
+import { askAIProvider } from '@/lib/aiProvider'
 
 const SCHOOL_ID  = process.env.NEXT_PUBLIC_SCHOOL_ID!
 const BASE_URL   = process.env.NEXT_PUBLIC_APP_URL   ?? 'https://project-o7htk.vercel.app'
@@ -84,17 +85,9 @@ type Intent =
 
 async function detectIntent(message: string): Promise<Intent> {
   try {
-    const groqKey = process.env.GROQ_API_KEY
-    if (!groqKey) return 'unknown'
-    const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${groqKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'llama-3.1-8b-instant',
-        max_tokens: 50,
-        messages: [{
-          role: 'user',
-          content: `Classify this WhatsApp message into exactly ONE of these intents:
+    const ai = await askAIProvider('You classify WhatsApp messages into a single intent word for a Kenyan school.', [{
+      role: 'user',
+      content: `Classify this WhatsApp message into exactly ONE of these intents:
 greeting, fee_query, results_query, attendance_query, kcse_query, duty_query, send_my_link, principal_broadcast, unknown
 
 Rules:
@@ -111,12 +104,8 @@ Rules:
 Message: "${message.replace(/"/g, "'").slice(0, 300)}"
 
 Reply with ONLY the intent word, nothing else.`,
-        }],
-      }),
-    })
-    if (!groqRes.ok) return 'unknown'
-    const groqData = await groqRes.json() as { choices?: { message: { content: string } }[] }
-    const text = (groqData.choices?.[0]?.message?.content ?? '').trim().toLowerCase() as Intent
+    }], 50)
+    const text = (ai.content ?? '').trim().toLowerCase() as Intent
     const valid: Intent[] = ['greeting','fee_query','results_query','attendance_query','kcse_query','duty_query','send_my_link','principal_broadcast','unknown']
     return valid.includes(text) ? text : 'unknown'
   } catch {

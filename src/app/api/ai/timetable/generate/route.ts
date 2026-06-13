@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/requireAuth'
 import { createAdminSupabaseClient } from '@/lib/supabase-server'
+import { askAIProvider } from '@/lib/aiProvider'
 import { generateObject } from 'ai'
 import { google } from '@ai-sdk/google'
 import { z } from 'zod'
@@ -260,19 +261,8 @@ export async function POST(req: NextRequest) {
   const groqKey = process.env.GROQ_API_KEY
   try {
     if (!groqKey) throw new Error('no key')
-    const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${groqKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
-        max_tokens: 8000,
-        response_format: { type: 'json_object' },
-        messages: [{ role: 'user', content: prompt }],
-      }),
-    })
-    if (!groqRes.ok) throw new Error(`Groq ${groqRes.status}`)
-    const groqData = await groqRes.json() as { choices?: { message: { content: string } }[] }
-    const raw = groqData.choices?.[0]?.message?.content ?? '{}'
+    const ai = await askAIProvider('You are a school timetable generator for a Kenyan secondary school. Return ONLY valid JSON.', [{ role: 'user', content: prompt }], 8000)
+    const raw = ai.content || '{}'
     const validated = TimetableSchema.safeParse(JSON.parse(raw))
     if (!validated.success) throw new Error('schema mismatch')
     result = validated.data

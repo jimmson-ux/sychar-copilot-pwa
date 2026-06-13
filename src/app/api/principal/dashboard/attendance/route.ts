@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/requireAuth'
 import { createAdminSupabaseClient } from '@/lib/supabase-server'
+import { askAIProvider } from '@/lib/aiProvider'
 import { streamText, generateText } from 'ai'
 import { google } from '@ai-sdk/google'
 
@@ -133,14 +134,8 @@ export async function GET(req: NextRequest) {
   const groqKey = process.env.GROQ_API_KEY
   try {
     if (!groqKey) throw new Error('no key')
-    const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${groqKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: 'llama-3.1-8b-instant', max_tokens: 200, messages: [{ role: 'user', content: buildPrompt(data) }] }),
-    })
-    if (!groqRes.ok) throw new Error('Groq error')
-    const groqData = await groqRes.json() as { choices?: { message: { content: string } }[] }
-    ai_briefing = groqData.choices?.[0]?.message?.content?.trim() ?? null
+    const ai = await askAIProvider('You are a school attendance analyst for a Kenyan secondary school.', [{ role: 'user', content: buildPrompt(data) }], 200)
+    ai_briefing = ai.content?.trim() || null
   } catch {
     try {
       const { text } = await generateText({ model: google('gemini-2.0-flash'), prompt: buildPrompt(data), maxOutputTokens: 200 })

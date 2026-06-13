@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createAdminSupabaseClient } from '@/lib/supabase-server'
+import { askAIProvider } from '@/lib/aiProvider'
 
 export const dynamic = 'force-dynamic'
 
@@ -217,40 +218,25 @@ export async function GET(req: Request) {
   // ── AI narrative (Groq) ───────────────────────────────────────────────────
   let narrative = ''
   try {
-    const groqKey = process.env.GROQ_API_KEY
-    if (!groqKey) throw new Error('GROQ_API_KEY missing')
-    const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${groqKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'llama-3.1-8b-instant',
-        max_tokens: 600,
-        messages: [{
-          role: 'user',
-          content: `You are generating an executive summary for a school Board of Management (BOM) report.
-Write exactly 3 concise paragraphs (no headers, no bullet points) summarizing this term's performance data.
+    const ai = await askAIProvider(
+      'You generate executive summaries for school Board of Management (BOM) reports in Kenya.',
+      [{ role: 'user', content: `Write exactly 3 concise paragraphs (no headers, no bullet points) summarizing this term's performance data.
 Highlight the top 2 achievements and top 2 areas needing attention. Be professional and specific.
 
 Data: ${JSON.stringify({
-            school:    report.school.name,
-            term:      report.term,
-            students:  report.total_students,
-            staff:     report.total_staff,
-            academic:  report.academic,
-            attendance: report.attendance,
-            discipline: report.discipline,
-            staffing:  report.staffing,
-            talent:    report.talent,
-          })}`,
-        }],
-      }),
-    })
-    if (groqRes.ok) {
-      const groqData = await groqRes.json() as { choices?: { message: { content: string } }[] }
-      narrative = groqData.choices?.[0]?.message?.content ?? ''
-    } else {
-      narrative = 'AI narrative unavailable — please review the data tables below.'
-    }
+        school:    report.school.name,
+        term:      report.term,
+        students:  report.total_students,
+        staff:     report.total_staff,
+        academic:  report.academic,
+        attendance: report.attendance,
+        discipline: report.discipline,
+        staffing:  report.staffing,
+        talent:    report.talent,
+      })}` }],
+      600,
+    )
+    narrative = ai.content || 'AI narrative unavailable — please review the data tables below.'
   } catch {
     narrative = 'AI narrative unavailable — please review the data tables below.'
   }
