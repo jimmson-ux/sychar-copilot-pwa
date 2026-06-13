@@ -7,6 +7,7 @@ import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/requireAuth'
 import { rateLimit, LIMITS } from '@/lib/rateLimit'
+import { askAIProvider } from '@/lib/aiProvider'
 
 function svc() {
   return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
@@ -125,17 +126,10 @@ export async function POST(req: Request) {
   let aiScore = 70
   let aiReasoning = 'Default viability score — AI service not configured'
 
-  if (process.env.GROQ_API_KEY) {
-    try {
-      const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${process.env.GROQ_API_KEY}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'llama-3.1-8b-instant',
-          max_tokens: 200,
-          messages: [{
-            role: 'user',
-            content: `Rate the viability of this school fee payment plan for a Kenyan secondary school.
+  try {
+    const ai = await askAIProvider(
+      'You are a Kenyan secondary school finance assistant.',
+      [{ role: 'user', content: `Rate the viability of this school fee payment plan for a Kenyan secondary school.
 
 Total balance: KES ${totalBalance.toLocaleString()}
 Installments: ${numberOfInstallments} payments of ~KES ${installmentAmount.toLocaleString()} each
@@ -144,20 +138,15 @@ Schedule: bi-weekly over ${numberOfInstallments * 2} weeks
 Return ONLY valid JSON:
 {"score": 0, "reasoning": "one sentence explanation"}
 
-score: 0-100 (100 = very viable, 0 = unrealistic)`,
-          }],
-        }),
-      })
-      if (groqRes.ok) {
-        const groqData = await groqRes.json() as { choices?: { message: { content: string } }[] }
-        const text = groqData.choices?.[0]?.message?.content ?? '{}'
-        const parsed = JSON.parse(text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim())
-        aiScore     = Math.max(0, Math.min(100, Number(parsed.score ?? 70)))
-        aiReasoning = parsed.reasoning ?? ''
-      }
-    } catch (err) {
-      console.error('[payment-plan] AI scoring error:', err)
-    }
+score: 0-100 (100 = very viable, 0 = unrealistic)` }],
+      200,
+    )
+    const text = ai.content || '{}'
+    const parsed = JSON.parse(text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim())
+    aiScore     = Math.max(0, Math.min(100, Number(parsed.score ?? 70)))
+    aiReasoning = parsed.reasoning ?? ''
+  } catch (err) {
+    console.error('[payment-plan] AI scoring error:', err)
   }
 
   const { data: plan, error: planErr } = await db

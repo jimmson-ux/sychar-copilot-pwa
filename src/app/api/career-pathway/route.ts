@@ -5,6 +5,7 @@ export const dynamic = 'force-dynamic'
 import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/requireAuth'
+import { askAIProvider } from '@/lib/aiProvider'
 import { detectCluster, matchCourses, gradeToPoints } from '@/lib/kuccps-data'
 
 function svc() {
@@ -124,23 +125,14 @@ Points gap to top course: ${gap} cluster points
 Be encouraging but realistic. Mention their strongest subjects, top course match, and one clear improvement action.
 Write in second person ("Your performance..."). Plain text only, no headers.`
 
-  const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${GROQ_API_KEY}`, 'content-type': 'application/json' },
-    body: JSON.stringify({
-      model: 'llama-3.1-8b-instant',
-      max_tokens: 300,
-      messages: [
-        { role: 'system', content: 'You are a Kenyan school career guidance counsellor. Write encouraging, realistic advice.' },
-        { role: 'user', content: prompt },
-      ],
-    }),
-  })
-
-  const groqData = groqRes.ok
-    ? await groqRes.json() as { choices?: { message: { content: string } }[] }
-    : { choices: [] }
-  const narrative = groqData.choices?.[0]?.message?.content ?? 'Career pathway analysis not available.'
+  let narrative = 'Career pathway analysis not available.'
+  try {
+    const ai = await askAIProvider(
+      'You are a Kenyan school career guidance counsellor. Write encouraging, realistic advice.',
+      [{ role: 'user', content: prompt }], 300,
+    )
+    if (ai.content) narrative = ai.content
+  } catch { /* keep fallback */ }
 
   const report = {
     student_id:    studentId,
