@@ -1,0 +1,16 @@
+{
+  "name": "@sychar/core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Framework-agnostic Sychar platform logic (templates, domain config, data-access). Single source of truth — vendored into school PWAs via scripts/sync-core.mjs. NO next/* or @tanstack/* imports.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*.ts",
+    "./templates": "./src/templates/index.ts"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "*",
+    "zod": "*"
+  }
+}

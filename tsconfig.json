@@ -19,7 +19,9 @@
       }
     ],
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@sychar/core": ["./packages/core/src/index.ts"],
+      "@sychar/core/*": ["./packages/core/src/*"]
     }
   },
   "include": [
