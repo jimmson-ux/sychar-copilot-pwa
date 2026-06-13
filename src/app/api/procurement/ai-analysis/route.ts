@@ -5,6 +5,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/requireAuth'
+import { askAIProvider } from '@/lib/aiProvider'
 import { createAdminSupabaseClient } from '@/lib/supabase-server'
 import { generateText } from 'ai'
 import { google } from '@ai-sdk/google'
@@ -15,14 +16,8 @@ async function callAI(prompt: string): Promise<string> {
   const groqKey = process.env.GROQ_API_KEY
   try {
     if (!groqKey) throw new Error('no key')
-    const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${groqKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: 'llama-3.3-70b-versatile', max_tokens: 800, messages: [{ role: 'user', content: prompt }] }),
-    })
-    if (!groqRes.ok) throw new Error('Groq error')
-    const groqData = await groqRes.json() as { choices?: { message: { content: string } }[] }
-    const text = groqData.choices?.[0]?.message?.content ?? ''
+    const ai = await askAIProvider('You are a procurement analyst for a Kenyan secondary school.', [{ role: 'user', content: prompt }], 800)
+    const text = ai.content ?? ''
     if (!text) throw new Error('empty')
     return text
   } catch {
