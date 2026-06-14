@@ -176,12 +176,46 @@ export async function applyPresenceAndPush(db: DB, school_id: string, events: St
   const { data: studs } = await db.from('students').select('id, full_name, photo_url').in('id', ids)
   const info = new Map<string, any>((studs ?? []).map((s: any) => [s.id, s]))
 
-  // Presence updates (capped concurrency).
+  // Open (approved, not-yet-returned) exeats → classify a check-in as a RETURN, not ARRIVAL.
+  const { data: openExeats } = await db.from('exeat_requests')
+    .select('id, student_id, leave_type')
+    .eq('school_id', school_id).eq('status', 'approved').is('return_time', null)
+    .in('student_id', ids)
+  const exeatByStudent = new Map<string, any>((openExeats ?? []).map((x: any) => [x.student_id, x]))
+
+  // Presence engine + movement timeline (capped concurrency).
+  const nowIso = new Date().toISOString()
   await runCapped([...latest.values()], 20, async (e) => {
-    const presence = e.direction === 'in'
+    const open = exeatByStudent.get(e.student_id)
+    let movementType: string
+    let status: string
+    if (e.direction === 'in') {
+      status = 'ON_CAMPUS'
+      if (open) {
+        movementType = open.leave_type === 'hospital' ? 'RETURN_FROM_HOSPITAL'
+          : open.leave_type === 'exeat' ? 'RETURN_FROM_EXEAT' : 'RETURN_FROM_LEAVE'
+        await db.from('exeat_requests').update({ return_time: e.event_at }).eq('id', open.id)
+      } else {
+        movementType = 'ARRIVAL'
+      }
+    } else {
+      movementType = 'DEPARTURE'
+      status = 'OFF_CAMPUS'
+    }
+    // Back-compat flag on students.
+    const flag = e.direction === 'in'
       ? { is_in_school: true, last_seen_in_at: e.event_at }
       : { is_in_school: false, last_seen_out_at: e.event_at }
-    await db.from('students').update(presence).eq('id', e.student_id)
+    await db.from('students').update(flag).eq('id', e.student_id)
+    // Presence state machine.
+    await db.from('student_presence').upsert({
+      student_id: e.student_id, school_id, current_status: status,
+      last_event: movementType, last_seen_at: e.event_at, updated_at: nowIso,
+    }, { onConflict: 'student_id' })
+    // Immutable movement timeline.
+    await db.from('student_movements').insert({
+      school_id, student_id: e.student_id, movement_type: movementType, event_at: e.event_at, actor: 'biometric',
+    })
   })
 
   // Pushes for FRESH events only (avoid blasting stale offline backlog).
