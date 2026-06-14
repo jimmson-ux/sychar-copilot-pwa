@@ -231,3 +231,25 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({ visitorId: v.id, checkInTime: v.check_in_time })
 }
+
+// PATCH /api/visitors — sign a visitor OUT (records check_out_time; clears overstay).
+export async function PATCH(req: NextRequest) {
+  const auth = await requireAuth()
+  if (auth.unauthorized) return auth.unauthorized
+  const body = await req.json().catch(() => ({})) as { visitorId?: string }
+  if (!body.visitorId) return NextResponse.json({ error: 'visitorId required' }, { status: 400 })
+
+  const db = svc()
+  const { data, error } = await db.from('visitor_log')
+    .update({ check_out_time: new Date().toISOString() })
+    .eq('id', body.visitorId).eq('school_id', auth.schoolId!).is('check_out_time', null)
+    .select('id, visitor_name, check_out_time').single()
+  if (error || !data) return NextResponse.json({ error: 'Visitor not found or already signed out' }, { status: 404 })
+
+  const v = data as { id: string; visitor_name: string; check_out_time: string }
+  await db.from('alerts').insert({
+    school_id: auth.schoolId, type: 'visitor_checkout', severity: 'low',
+    title: `Visitor OUT: ${v.visitor_name}`, detail: { visitor_id: v.id, direction: 'out' },
+  }).then(() => {}, () => {})
+  return NextResponse.json({ ok: true, visitorId: v.id, checkOutTime: v.check_out_time })
+}
