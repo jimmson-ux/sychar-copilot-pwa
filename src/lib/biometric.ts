@@ -183,6 +183,26 @@ export async function applyPresenceAndPush(db: DB, school_id: string, events: St
     .in('student_id', ids)
   const exeatByStudent = new Map<string, any>((openExeats ?? []).map((x: any) => [x.student_id, x]))
 
+  // Per-school gate-pass enforcement (Oloolaiser boarding). When ON, an OUT scan with no
+  // approved exeat AND no active gate pass is an UNAUTHORIZED_EXIT_ATTEMPT → incident + push.
+  const outIds = [...new Set(events.filter((e) => e.direction === 'out').map((e) => e.student_id))]
+  let enforceGatePass = false
+  const authorizedExit = new Set<string>()
+  if (outIds.length) {
+    const { data: tc } = await db.from('tenant_configs').select('settings').eq('school_id', school_id).maybeSingle()
+    enforceGatePass = (tc as { settings?: { gate_pass_enforced?: boolean } } | null)?.settings?.gate_pass_enforced === true
+    if (enforceGatePass) {
+      const nowT = new Date().toISOString()
+      const { data: passes } = await db.from('gate_passes')
+        .select('student_id, status, pin_expires_at')
+        .eq('school_id', school_id).in('student_id', outIds).in('status', ['approved', 'exited', 'pending'])
+      for (const p of (passes ?? []) as { student_id: string; status: string; pin_expires_at: string | null }[]) {
+        if (p.status === 'exited' || !p.pin_expires_at || p.pin_expires_at > nowT) authorizedExit.add(p.student_id)
+      }
+      for (const sid of exeatByStudent.keys()) authorizedExit.add(sid) // an approved exeat authorises exit
+    }
+  }
+
   // Presence engine + movement timeline (capped concurrency).
   const nowIso = new Date().toISOString()
   await runCapped([...latest.values()], 20, async (e) => {
@@ -199,8 +219,25 @@ export async function applyPresenceAndPush(db: DB, school_id: string, events: St
         movementType = 'ARRIVAL'
       }
     } else {
-      movementType = 'DEPARTURE'
       status = 'OFF_CAMPUS'
+      if (enforceGatePass && !authorizedExit.has(e.student_id)) {
+        movementType = 'UNAUTHORIZED_EXIT_ATTEMPT'
+        const stu = info.get(e.student_id)
+        const nm = stu?.full_name ?? 'A student'
+        // Incident on the gate board.
+        db.from('alerts').insert({
+          school_id, type: 'unauthorized_exit_attempt', severity: 'high',
+          title: `⚠️ UNAUTHORISED EXIT: ${nm} left the gate at ${nairobiTime(e.event_at)} with no exeat/gate-pass`,
+          detail: { student_id: e.student_id, event_at: e.event_at, direction: 'out' },
+        }).then(() => {}, () => {})
+        // Push principal + deputy + current Teacher-on-Duty.
+        const base = process.env.NEXT_PUBLIC_SUPABASE_URL!, key = process.env.SUPABASE_SERVICE_ROLE_KEY!
+        const payload = { title: '⚠️ Unauthorised gate exit', body: `${nm} left without an approved exeat or gate pass at ${nairobiTime(e.event_at)}.`, url: '/dashboard/gate', tag: `unauth-exit-${e.student_id}`, renotify: true }
+        fetch(`${base}/functions/v1/send-push`, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+          body: JSON.stringify({ school_id, audience: 'role', value: ['principal', 'deputy_principal', 'deputy_principal_admin', 'teacher_on_duty', 'tod'], payload }) }).catch(() => {})
+      } else {
+        movementType = 'DEPARTURE'
+      }
     }
     // Back-compat flag on students.
     const flag = e.direction === 'in'

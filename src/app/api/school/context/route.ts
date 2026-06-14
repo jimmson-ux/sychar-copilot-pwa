@@ -25,8 +25,8 @@ export async function GET() {
 
   const db = createAdminSupabaseClient()
 
-  // Parallel: school_metadata + school_settings (for current_term / academic_year)
-  const [metaRes, settingsRes] = await Promise.all([
+  // Parallel: school_metadata + school_settings + lifecycle gates (suspend / maintenance).
+  const [metaRes, settingsRes, schoolRes, tenantRes, globalRes] = await Promise.all([
     db
       .from('school_metadata')
       .select('*')
@@ -37,10 +37,25 @@ export async function GET() {
       .select('current_term, current_academic_year, school_name, principal_phone')
       .eq('school_id', auth.schoolId)
       .single(),
+    db.from('schools').select('is_active').eq('id', auth.schoolId).maybeSingle(),
+    db.from('tenant_configs').select('features').eq('school_id', auth.schoolId).maybeSingle(),
+    db.from('global_settings').select('maintenance_mode, maintenance_message').eq('id', 1).maybeSingle(),
   ])
 
   const meta     = metaRes.data
   const settings = settingsRes.data
+
+  // Access gates the PWA enforces with a lock screen:
+  //   suspended   → billing/admin suspend (schools.is_active=false)
+  //   maintenance → global OR this school's tenant_configs.features.maintenance_mode
+  const suspended = schoolRes.data?.is_active === false
+  const tcFeatures = (tenantRes.data?.features ?? {}) as { maintenance_mode?: boolean; maintenance_message?: string }
+  const globalMaint = globalRes.data?.maintenance_mode === true
+  const schoolMaint = tcFeatures.maintenance_mode === true
+  const maintenance = globalMaint || schoolMaint
+  const maintenanceMessage = schoolMaint
+    ? (tcFeatures.maintenance_message || 'This school portal is temporarily under maintenance.')
+    : (globalRes.data?.maintenance_message || 'Sychar is temporarily under maintenance.')
 
   // Merge theme — prefer school_metadata.theme, fill gaps with defaults
   const rawTheme  = (meta?.theme ?? {}) as Partial<SchoolTheme>
@@ -71,9 +86,17 @@ export async function GET() {
     county:          meta?.county ?? '',
   }
 
-  return NextResponse.json(context, {
-    headers: {
-      'Cache-Control': 'private, max-age=300, stale-while-revalidate=600',
+  // Surface the lifecycle gates alongside context so SchoolThemeProvider can render a lock
+  // screen. When locked we shorten the cache so reactivation is picked up quickly.
+  const locked = suspended || maintenance
+  return NextResponse.json(
+    { ...context, suspended, maintenance, maintenanceMessage },
+    {
+      headers: {
+        'Cache-Control': locked
+          ? 'private, max-age=15, stale-while-revalidate=30'
+          : 'private, max-age=300, stale-while-revalidate=600',
+      },
     },
-  })
+  )
 }
